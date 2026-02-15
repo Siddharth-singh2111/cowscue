@@ -15,14 +15,22 @@ export default function ReportPage() {
   const [description, setDescription] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
 
-  // 🔴 REPLACE THESE WITH YOUR CLOUDINARY KEYS
-  const CLOUD_NAME = "drjvdn9he"; 
-  const UPLOAD_PRESET = "cowscue"; 
+  // 🟢 Access keys securely from environment variables
+  const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!imageFile || !description) {
       alert("Please provide an image and description.");
+      return;
+    }
+
+    // Safety Check: Ensure keys exist
+    if (!CLOUD_NAME || !UPLOAD_PRESET) {
+      alert("System Error: Cloudinary keys are missing in .env.local file");
+      console.error("Missing NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME or NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET");
       return;
     }
 
@@ -49,7 +57,13 @@ export default function ReportPage() {
         `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
         { method: "POST", body: formData }
       );
+      
       const uploadData = await uploadRes.json();
+      
+      if (!uploadRes.ok) {
+        throw new Error(`Cloudinary Upload Failed: ${uploadData.error?.message}`);
+      }
+      
       const imageUrl = uploadData.secure_url;
 
       // 3. Send Data to Our Backend API
@@ -64,13 +78,20 @@ export default function ReportPage() {
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to submit report");
+      const data = await res.json();
+      
+      if (!res.ok) {
+        console.error("Server Error Details:", data); // Logs to browser console
+        throw new Error(data.error || "Failed to submit report");
+      }
 
       alert("Report submitted successfully!");
       router.push("/"); // Redirect to home
-    } catch (error) {
-      console.error(error);
-      alert("Something went wrong. Please try again.");
+
+    } catch (error: any) {
+      console.error("Submission Error:", error);
+      // Show the specific error message to the user for better debugging
+      alert(`Error: ${error.message || "Something went wrong. Please try again."}`);
     } finally {
       setLoading(false);
     }

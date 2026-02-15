@@ -12,6 +12,7 @@ export interface IReport extends Document {
     coordinates: number[]; // [longitude, latitude]
   };
   createdAt: Date;
+  createdBy: string;
 }
 
 // 2. The Mongoose Schema (For the Database to understand)
