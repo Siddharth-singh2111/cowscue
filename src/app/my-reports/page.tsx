@@ -50,9 +50,7 @@ export default function MyReports() {
         <h1 className="text-3xl font-bold text-slate-800">
           My Report History
         </h1>
-        <Link href="/report">
-          <Button>+ New Report</Button>
-        </Link>
+       
       </div>
 
       {reports.length === 0 ? (

@@ -1,48 +1,58 @@
-// src/app/api/reports/[id]/route.ts
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Report from "@/models/Report";
 import { currentUser } from "@clerk/nextjs/server";
-import { checkIsAdmin } from "@/lib/utils";
 
 export async function PATCH(
   req: Request,
   props: { params: Promise<{ id: string }> }
 ) {
-  // 🟢 FIX 1: Await the params object (Required in Next.js 15+)
   const params = await props.params;
-
 
   try {
     const user = await currentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // 🔒 SECURITY CHECK
-    const email = user.emailAddresses[0]?.emailAddress;
-    if (!checkIsAdmin(email)) {
-       return NextResponse.json({ error: "Forbidden: Admins only" }, { status: 403 });
-    }
-
+    const { status } = await req.json(); // e.g., 'assigned' or 'resolved'
+    
     await connectDB();
 
-    // 2. Get the new status from the request body
-    const { status } = await req.json();
+    // SCENARIO 1: NGO Trying to Accept a Case
+    if (status === 'assigned') {
+      // atomic update: Only update IF current status is 'pending'
+      const updatedReport = await Report.findOneAndUpdate(
+        { _id: params.id, status: 'pending' }, 
+        { 
+          status: 'assigned',
+          // We can optionally add an 'assignedTo' field here later to track WHICH NGO took it
+        },
+        { new: true }
+      );
 
-    // 3. Find the report by ID and update it
-    const updatedReport = await Report.findByIdAndUpdate(
-      params.id,
-      { status: status }, 
-      { returnDocument: 'after' } // 🟢 FIX 2: Use modern Mongoose syntax instead of { new: true }
-    );
-
-    if (!updatedReport) {
-      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+      if (!updatedReport) {
+        return NextResponse.json(
+          { error: "This case has already been accepted by another NGO." }, 
+          { status: 409 } // 409 Conflict
+        );
+      }
+      
+      return NextResponse.json({ report: updatedReport }, { status: 200 });
     }
 
-    return NextResponse.json({ report: updatedReport }, { status: 200 });
+    // SCENARIO 2: Marking as Resolved (Only allowed if it was already assigned)
+    if (status === 'resolved') {
+       const updatedReport = await Report.findOneAndUpdate(
+        { _id: params.id }, 
+        { status: 'resolved' },
+        { new: true }
+      );
+      return NextResponse.json({ report: updatedReport }, { status: 200 });
+    }
+
+    return NextResponse.json({ error: "Invalid status transition" }, { status: 400 });
 
   } catch (error) {
-    console.error("Error updating report:", error);
+    console.error("Update Error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

@@ -2,7 +2,7 @@ import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 const ADMIN_EMAILS = [
   "secretwars495@gmail.com", 
-  "sahilsinghrajpoot45gmail.com" 
+  "sahilsinghrajpoot45@gmail.com" 
 ];
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

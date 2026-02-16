@@ -30,7 +30,9 @@ const Navbar = () => {
               </Button>
             </Link>
           )}
-
+          <Link href="/report">
+  
+</Link>
           {/* EVERYONE SEES THIS */}
           <Link href="/my-reports">
             <Button variant="ghost" className="text-slate-600 hover:bg-slate-100">
