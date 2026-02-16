@@ -14,7 +14,7 @@ export default function Home() {
       
       <Link href="/report">
         <Button size="lg" className="bg-green-600 hover:bg-green-700 text-lg px-8 py-6 rounded-full">
-          Report an Injured Cow Now
+          Report an Injured/Stray Cow Now
         </Button>
       </Link>
     </div>
