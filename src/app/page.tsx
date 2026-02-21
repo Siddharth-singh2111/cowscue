@@ -10,7 +10,7 @@ export default function Home() {
      
         <div className="relative z-10 max-w-4xl mx-auto text-center space-y-6">
           <div className="inline-block px-4 py-1.5 rounded bg-orange-100 text-orange-700 text-sm font-bold mb-4 border border-orange-200">
-             Project Cowscue: Save lives of stray Cattle immediately
+             Project Cowscue: Save lives of stray Cattle immediately 
           </div>
           <h1 className="text-5xl md:text-7xl font-extrabold text-slate-900 tracking-tight leading-tight">
             Rescue Stray Cattle <br />

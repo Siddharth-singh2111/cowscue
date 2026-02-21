@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { Badge } from "@/components/ui/badge"; // Make sure to install: npx shadcn@latest add badge
-import { Slider } from "@/components/ui/slider"; // Make sure to install: npx shadcn@latest add slider
+import { Badge } from "@/components/ui/badge";
+import { Slider } from "@/components/ui/slider";
 import { MapPin, RefreshCw } from "lucide-react";
+import { pusherClient } from "@/lib/pusher";
 
 // Dynamically import Map
-const RescueMap = dynamic(() => import("@/components/Map"), { 
+const RescueMap = dynamic(() => import("@/components/Map"), {
   ssr: false,
   loading: () => <div className="h-[400px] w-full bg-slate-100 animate-pulse rounded-xl">Loading Map...</div>
 });
@@ -33,9 +34,9 @@ export default function Dashboard() {
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [radius, setRadius] = useState([10]); // Default 10km
-  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
 
-  // 🔴 REPLACE WITH YOUR ACTUAL ADMIN EMAIL LIST CHECK
+
   const ADMIN_EMAILS = ["secretwars495@gmail.com", "sahilsinghrajpoot45@gmail.com"];
 
   useEffect(() => {
@@ -50,7 +51,7 @@ export default function Dashboard() {
             const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
             setUserLocation(loc);
             fetchNearbyReports(loc.lat, loc.lng, radius[0]);
-          }, 
+          },
           (err) => {
             alert("Location access denied. Showing all reports.");
             fetchAllReports(); // Fallback
@@ -59,13 +60,31 @@ export default function Dashboard() {
       }
     }
   }, [isLoaded, user, router]);
+  useEffect(() => {
+    // 1. Subscribe to the channel
+    const channel = pusherClient.subscribe("cowscue-alerts");
+
+    // 2. Bind to the 'new-report' event
+    channel.bind("new-report", (newReport: Report) => {
+      // Show an alert to the NGO
+      alert(`🚨 NEW EMERGENCY: ${newReport.description}`);
+      
+      // Instantly add the new report to the top of the dashboard map & grid
+      setReports((prevReports) => [newReport, ...prevReports]);
+    });
+
+    // 3. Cleanup connection when the component unmounts
+    return () => {
+      pusherClient.unsubscribe("cowscue-alerts");
+    };
+  }, []);
 
   const fetchAllReports = async () => {
     try {
       const res = await fetch("/api/reports");
       const data = await res.json();
       setReports(data.reports || []);
-    } catch (e) { console.error(e); } 
+    } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
@@ -107,26 +126,26 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2">
-            🚑 Rescue Dashboard
+            Suraksha Dashboard
           </h1>
-          <p className="text-slate-500">
+          <p className="text-black">
             {userLocation ? `Showing reports within ${radius}km of your location` : "Showing all global reports"}
           </p>
         </div>
-        
+
         {/* Radius Slider Controls */}
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 w-full md:w-auto min-w-[300px]">
-           <div className="flex justify-between mb-2">
-              <span className="text-sm font-semibold">Search Radius: {radius}km</span>
-              <MapPin className="h-4 w-4 text-orange-500"/>
-           </div>
-           <Slider 
-             defaultValue={[10]} 
-             max={50} 
-             step={1} 
-             onValueChange={(val) => setRadius(val)}
-             onValueCommit={(val) => userLocation && fetchNearbyReports(userLocation.lat, userLocation.lng, val[0])}
-           />
+          <div className="flex justify-between mb-2">
+            <span className="text-sm font-semibold">Search Radius: {radius}km</span>
+            <MapPin className="h-4 w-4 text-orange-500" />
+          </div>
+          <Slider
+            defaultValue={[10]}
+            max={50}
+            step={1}
+            onValueChange={(val) => setRadius(val)}
+            onValueCommit={(val) => userLocation && fetchNearbyReports(userLocation.lat, userLocation.lng, val[0])}
+          />
         </div>
       </div>
 
@@ -148,43 +167,46 @@ export default function Dashboard() {
                   alt="Injured Cow"
                   className="w-full h-full object-cover"
                 />
-                <Badge className={`absolute top-2 right-2 ${
-                  report.status === 'pending' ? 'bg-red-500 hover:bg-red-600' : 
-                  report.status === 'assigned' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'
-                }`}>
+                <Badge className={`absolute top-2 right-2 ${report.status === 'pending' ? 'bg-red-500 hover:bg-red-600' :
+                    report.status === 'assigned' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'
+                  }`}>
                   {report.status.toUpperCase()}
                 </Badge>
               </div>
-              
-              <CardContent className="pt-4">
-                 <p className="text-slate-700 font-medium mb-4 line-clamp-2">{report.description}</p>
-                 <div className="text-xs text-slate-400 mb-4 flex items-center gap-1">
-                    <MapPin size={12}/> Reported {new Date(report.createdAt).toLocaleDateString()}
-                 </div>
 
-                 {report.status === 'pending' && (
-                   <Button 
-                     className="w-full bg-blue-600 hover:bg-blue-700"
-                     onClick={() => handleStatusChange(report._id, "assigned")}
-                   >
-                     Accept Rescue Mission
-                   </Button>
-                 )}
-                 
-                 {report.status === 'assigned' && (
-                   <Button 
-                     className="w-full bg-green-600 hover:bg-green-700"
-                     onClick={() => handleStatusChange(report._id, "resolved")}
-                   >
-                     Mark as Safe & Resolved
-                   </Button>
-                 )}
-                 
-                 {report.status === 'resolved' && (
-                   <Button variant="outline" disabled className="w-full">
-                     ✅ Rescue Complete
-                   </Button>
-                 )}
+              <CardContent className="pt-4">
+                <p className="text-slate-700 font-medium mb-4 line-clamp-2">{report.description}</p>
+                <div className="text-xs text-slate-400 mb-4 flex items-center gap-1">
+                  <MapPin size={12} /> Reported {new Date(report.createdAt).toLocaleDateString()}
+                </div>
+                 <Button className=" mx-auto bg-white-200 hover:bg-yellow-200" variant="outline" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${report.location.coordinates[1]},${report.location.coordinates[0]}`)}>
+                   Get Directions
+                </Button>
+
+                {report.status === 'pending' && (
+                  <Button
+                    className="w-full bg-green-600 hover:bg-green-700"
+                    onClick={() => handleStatusChange(report._id, "assigned")}
+                  >
+                    Accept Rescue Mission
+                  </Button>
+                )}
+
+                {report.status === 'assigned' && (
+                  <Button
+                    className="w-full bg-green-600 hover:bg-green-700"
+                    onClick={() => handleStatusChange(report._id, "resolved")}
+                  >
+                    Mark as Safe & Resolved
+                  </Button>
+                )}
+               
+
+                {report.status === 'resolved' && (
+                  <Button variant="outline" disabled className="w-full">
+                     Rescue Complete
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

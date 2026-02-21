@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Report from "@/models/Report";
 import { currentUser } from "@clerk/nextjs/server";
+import { pusherServer } from "@/lib/pusher"; 
 
 export async function PATCH(
   req: Request,
@@ -13,39 +14,46 @@ export async function PATCH(
     const user = await currentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { status } = await req.json(); // e.g., 'assigned' or 'resolved'
+    const { status } = await req.json(); 
     
     await connectDB();
 
     // SCENARIO 1: NGO Trying to Accept a Case
     if (status === 'assigned') {
-      // atomic update: Only update IF current status is 'pending'
       const updatedReport = await Report.findOneAndUpdate(
         { _id: params.id, status: 'pending' }, 
-        { 
-          status: 'assigned',
-          // We can optionally add an 'assignedTo' field here later to track WHICH NGO took it
-        },
+        { status: 'assigned' },
         { new: true }
       );
 
       if (!updatedReport) {
         return NextResponse.json(
           { error: "This case has already been accepted by another NGO." }, 
-          { status: 409 } // 409 Conflict
+          { status: 409 } 
         );
       }
       
+      // 🟢 2. Trigger Real-Time Status Update
+      try {
+        await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
+      } catch (e) { console.error("Pusher error:", e); }
+
       return NextResponse.json({ report: updatedReport }, { status: 200 });
     }
 
-    // SCENARIO 2: Marking as Resolved (Only allowed if it was already assigned)
+    // SCENARIO 2: Marking as Resolved 
     if (status === 'resolved') {
        const updatedReport = await Report.findOneAndUpdate(
         { _id: params.id }, 
         { status: 'resolved' },
         { new: true }
       );
+
+      // 🟢 3. Trigger Real-Time Status Update
+      try {
+        await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
+      } catch (e) { console.error("Pusher error:", e); }
+
       return NextResponse.json({ report: updatedReport }, { status: 200 });
     }
 

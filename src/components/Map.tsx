@@ -27,7 +27,8 @@ export default function RescueMap({ reports }: MapProps) {
 
   return (
     <div className="h-[400px] w-full rounded-xl overflow-hidden shadow-lg border-2 border-slate-200 z-0">
-      <MapContainer 
+      <MapContainer
+        key={reports.length} 
         center={center} 
         zoom={5} 
         style={{ height: "100%", width: "100%" }}

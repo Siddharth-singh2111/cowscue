@@ -46,16 +46,15 @@ export default function ReportPage() {
     setLocationStatus("locating");
 
     try {
-      // 1. Get Location
       if (!navigator.geolocation) throw new Error("Geolocation not supported");
-      
+
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { 
-           enableHighAccuracy: true, 
-           timeout: 10000 
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000
         });
       });
-      
+
       setLocationStatus("found");
       const { latitude, longitude } = position.coords;
 
@@ -68,11 +67,12 @@ export default function ReportPage() {
         `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
         { method: "POST", body: formData }
       );
-      
+
       if (!uploadRes.ok) throw new Error("Image upload failed");
       const uploadData = await uploadRes.json();
       const imageUrl = uploadData.secure_url;
 
+      // 3. Submit Report
       // 3. Submit Report
       const res = await fetch("/api/reports", {
         method: "POST",
@@ -80,15 +80,25 @@ export default function ReportPage() {
         body: JSON.stringify({ imageUrl, description, latitude, longitude }),
       });
 
-      if (!res.ok) throw new Error("Failed to submit report");
+      const responseData = await res.json();
 
-      router.push("/my-reports"); // Redirect to history instead of home for feedback
+      if (!res.ok) {
+        alert(`⚠️ ${responseData.error || "Failed to submit report"}`);
+        setLocationStatus("error");
+        setLoading(false); 
+        if (responseData.error?.includes("AI Verification Failed")) {
+          clearImage();
+        }
+        return;
+      }
+
+      alert("Report submitted successfully!");
+      router.push("/my-reports");
 
     } catch (error: any) {
       console.error(error);
-      alert(error.message || "Something went wrong");
       setLocationStatus("error");
-    } finally {
+      alert(`⚠️ ${error.message || "Something went wrong"}`);
       setLoading(false);
     }
   };
@@ -102,16 +112,14 @@ export default function ReportPage() {
           </CardTitle>
           <p className="text-orange-100 text-sm">Help us locate and rescue.</p>
         </CardHeader>
-        
+
         <CardContent className="p-6 space-y-6">
           <form onSubmit={handleSubmit} className="space-y-6">
-            
-            {/* Image Upload Area */}
             <div className="space-y-2">
               <Label className="text-slate-600 font-semibold">1. Photo Evidence</Label>
-              
+
               {!previewUrl ? (
-                <div 
+                <div
                   onClick={() => fileInputRef.current?.click()}
                   className="border-2 border-dashed border-slate-300 rounded-xl h-48 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors"
                 >
@@ -121,7 +129,7 @@ export default function ReportPage() {
               ) : (
                 <div className="relative h-64 w-full rounded-xl overflow-hidden group">
                   <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                  <button 
+                  <button
                     type="button"
                     onClick={clearImage}
                     className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70"
@@ -130,12 +138,12 @@ export default function ReportPage() {
                   </button>
                 </div>
               )}
-              
-              <input 
+
+              <input
                 ref={fileInputRef}
-                type="file" 
-                accept="image/*" 
-                className="hidden" 
+                type="file"
+                accept="image/*"
+                className="hidden"
                 onChange={handleFileChange}
               />
             </div>
@@ -161,8 +169,8 @@ export default function ReportPage() {
               {locationStatus === "error" && "Could not fetch location ❌"}
             </div>
 
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="w-full bg-orange-600 hover:bg-orange-700 text-lg py-6"
               disabled={loading}
             >
