@@ -61,4 +61,4 @@ export default function RescueMap({ reports }: MapProps) {
       </MapContainer>
     </div>
   );
-}
+}    
