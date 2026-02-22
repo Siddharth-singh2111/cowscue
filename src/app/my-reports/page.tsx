@@ -88,11 +88,11 @@ export default function MyReports() {
     <div className="min-h-screen p-4 md:p-8 bg-slate-50 space-y-8">
       
       {/* 🏆 IMPACT BANNER */}
-      <div className="bg-gradient-to-br from-orange-500 to-orange-700 rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
+      <div className="bg-gradient-to-br from-yellow-200 to-pink-700 rounded p-6 text-white shadow-lg relative overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
           <div>
-            <h1 className="text-3xl font-extrabold mb-2">Your Impact</h1>
-            <p className="text-orange-100">Every report makes a difference.</p>
+            <h1 className="text-3xl text-black font-extrabold mb-2">Your Impact</h1>
+            <p className="text-black">Every report makes a difference.</p>
           </div>
           
           <div className="flex gap-4">

@@ -1,9 +1,8 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, GeoJSON } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { useEffect } from "react";
 
 // Fix for missing marker icons in React Leaflet
 const icon = L.icon({
@@ -16,21 +15,22 @@ const icon = L.icon({
 });
 
 interface MapProps {
-  reports: any[]; // We'll pass our cow reports here
+  reports: any[]; 
+  optimizedRoute?: any; // 🟢 Added to accept routing data
 }
 
-export default function RescueMap({ reports }: MapProps) {
-  // Center the map on India (default) or the first report
+export default function RescueMap({ reports, optimizedRoute }: MapProps) {
   const center: [number, number] = reports.length > 0 
     ? [reports[0].location.coordinates[1], reports[0].location.coordinates[0]] 
-    : [20.5937, 78.9629]; // India Center
+    : [20.5937, 78.9629]; 
 
   return (
     <div className="h-[400px] w-full rounded-xl overflow-hidden shadow-lg border-2 border-slate-200 z-0">
-      <MapContainer
-        key={reports.length} 
+      <MapContainer 
+        // 🟢 The key forces the map to refresh cleanly when a route is added
+        key={`${center[0]}-${center[1]}-${optimizedRoute ? 'routed' : 'unrouted'}`} 
         center={center} 
-        zoom={5} 
+        zoom={11} 
         style={{ height: "100%", width: "100%" }}
         scrollWheelZoom={false}
       >
@@ -49,16 +49,20 @@ export default function RescueMap({ reports }: MapProps) {
               <div className="text-center">
                 <img src={report.imageUrl} alt="Cow" className="w-24 h-24 object-cover rounded mb-2 mx-auto"/>
                 <p className="font-bold text-sm">{report.description}</p>
-                <span className={`text-xs px-2 py-1 rounded ${
-                    report.status === 'pending' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'
-                }`}>
-                  {report.status}
-                </span>
               </div>
             </Popup>
           </Marker>
         ))}
+
+        {/* 🟢 Draw the Route if it exists */}
+        {optimizedRoute && (
+           <GeoJSON 
+             key={JSON.stringify(optimizedRoute)}
+             data={optimizedRoute} 
+             style={{ color: '#8b5cf6', weight: 6, opacity: 0.8 }} // Purple route line
+           />
+        )}
       </MapContainer>
     </div>
   );
-}    
+}
