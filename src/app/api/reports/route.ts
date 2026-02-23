@@ -6,6 +6,7 @@ import { currentUser } from "@clerk/nextjs/server";
 import { checkIsAdmin } from "@/lib/utils";
 import { GoogleGenerativeAI } from "@google/generative-ai"; 
 import { pusherServer } from "@/lib/pusher";
+import { sendWhatsAppAlert } from "@/lib/twilio";
 
 // Initialize Gemini with your API Key
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
     } catch (pusherError) {
       console.error("Failed to trigger Pusher:", pusherError);
     }
+    sendWhatsAppAlert(description, latitude, longitude);
 
     return NextResponse.json(
       { message: "Report submitted successfully", report: newReport },
