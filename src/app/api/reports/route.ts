@@ -19,9 +19,9 @@ export async function POST(req: Request) {
     }
 
     await connectDB();
-    const { imageUrl, description, latitude, longitude } = await req.json();
+    const { imageUrl, description, latitude, longitude,reporterPhone } = await req.json();
 
-    if (!imageUrl || !description || !latitude || !longitude) {
+    if (!imageUrl || !description || !latitude || !longitude || !reporterPhone) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -62,10 +62,21 @@ export async function POST(req: Request) {
       console.error("AI Check failed, proceeding anyway to avoid blocking real reports:", aiError);
     }
     // ==========================================
+const reporterName = user.firstName 
+      ? `${user.firstName} ${user.lastName || ""}`.trim() 
+      : "Anonymous Citizen";
 
+    // 2. Calculate their "Trust Score" (Karma) on the fly
+    const pastSuccessfulReports = await Report.countDocuments({ 
+      reporterId: user.id, 
+      status: 'resolved' 
+    });
     // 5. Create the new Report in MongoDB
-    const newReport = await Report.create({
+   const newReport = await Report.create({
       reporterId: user.id,
+      reporterName: reporterName,
+      reporterPhone: reporterPhone, // We will send this from the frontend
+      reporterHistory: pastSuccessfulReports,
       imageUrl,
       description,
       location: {

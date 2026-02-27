@@ -7,11 +7,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, MapPin, Upload, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 export default function ReportPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [description, setDescription] = useState("");
+  const [phone,setPhone]=useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [locationStatus, setLocationStatus] = useState<"idle" | "locating" | "found" | "error">("idle");
@@ -77,7 +79,7 @@ export default function ReportPage() {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, description, latitude, longitude }),
+        body: JSON.stringify({ imageUrl, description, latitude, longitude,reporterPhone: phone }),
       });
 
       const responseData = await res.json();
@@ -147,10 +149,21 @@ export default function ReportPage() {
                 onChange={handleFileChange}
               />
             </div>
-
+                <div className="space-y-2">
+              <Label htmlFor="phone" className="text-slate-600 font-semibold">2. Your Contact Number</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="e.g., +91 9876543210"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+              />
+              <p className="text-xs text-slate-400">So the rescue driver can call you for exact directions.</p>
+            </div>
             {/* Description */}
             <div className="space-y-2">
-              <Label htmlFor="desc" className="text-slate-600 font-semibold">2. Situation Details</Label>
+              <Label htmlFor="desc" className="text-slate-600 font-semibold">3. Situation Details</Label>
               <Textarea
                 id="desc"
                 placeholder="E.g., Male calf with leg injury near the main market..."

@@ -8,7 +8,7 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { MapPin, AlertTriangle, Truck, CheckCircle2, Clock, Route as RouteIcon, Loader2 } from "lucide-react";
+import { MapPin, AlertTriangle, Truck, CheckCircle2, Clock, Route as RouteIcon, Loader2, Star } from "lucide-react"; // 🟢 Added Star icon
 import { pusherClient } from "@/lib/pusher";
 
 // Dynamically import Map
@@ -19,6 +19,9 @@ const RescueMap = dynamic(() => import("@/components/Map"), {
 
 interface Report {
   _id: string;
+  reporterName: string;
+  reporterPhone: string;
+  reporterHistory: number;
   imageUrl: string;
   description: string;
   status: string;
@@ -34,7 +37,7 @@ export default function Dashboard() {
   const [radius, setRadius] = useState([15]); 
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   
-  // 🟢 NEW STATE FOR ROUTING
+  // ROUTING STATE
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
   const [isRouting, setIsRouting] = useState(false);
@@ -99,31 +102,22 @@ export default function Dashboard() {
     } catch (error) { console.error("Update failed", error); }
   };
 
-  // 🟢 ROUTING ALGORITHM
   const calculateOptimizedRoute = async () => {
     if (!userLocation) return alert("Waiting for your GPS location...");
     
     setIsRouting(true);
     try {
-      // 1. Get the coordinates of all selected cows
       const selectedCows = reports.filter(r => selectedReports.has(r._id));
-      
-      // 2. Format for OSRM: lon,lat;lon,lat;lon,lat
-      // We force the NGO's current location to be the starting point
       const coordinates = [
         [userLocation.lng, userLocation.lat], 
         ...selectedCows.map(cow => [cow.location.coordinates[0], cow.location.coordinates[1]])
       ].map(c => c.join(',')).join(';');
 
-      // 3. Call the public OSRM Trip API
-      // source=first means it MUST start at the NGO. destination=any means it finds the most efficient ending point.
       const res = await fetch(`https://router.project-osrm.org/trip/v1/driving/${coordinates}?source=first&destination=any&roundtrip=false&geometries=geojson`);
       const data = await res.json();
 
       if (data.code === "Ok") {
-        setOptimizedRoute(data.trips[0].geometry); // This is the Polyline GeoJSON
-        
-        // Scroll map into view
+        setOptimizedRoute(data.trips[0].geometry); 
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         alert("Routing failed. Some locations might not be reachable by road.");
@@ -183,7 +177,7 @@ export default function Dashboard() {
         <Card className="bg-green-50 border-green-100"><CardContent className="p-6"><div><p className="text-sm font-medium text-green-600 uppercase">Rescued</p><h2 className="text-4xl font-extrabold text-green-700 mt-2">{resolvedReports.length}</h2></div></CardContent></Card>
       </div>
 
-      {/* 4. MAP VIEW WITH ROUTING */}
+      {/* MAP VIEW WITH ROUTING */}
       <div className="mb-8 rounded-2xl overflow-hidden shadow-sm border border-slate-200 relative">
         <RescueMap reports={reports} optimizedRoute={optimizedRoute} />
         
@@ -199,7 +193,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div>
-          {/* 🟢 BATCH ROUTING CONTROLS */}
+          {/* BATCH ROUTING CONTROLS */}
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <AlertTriangle className="text-red-500" /> Action Required
@@ -223,7 +217,7 @@ export default function Dashboard() {
             ) : (
               pendingReports.concat(assignedReports).map((report) => (
                 <Card key={report._id} className={`flex flex-col sm:flex-row overflow-hidden transition-all ${selectedReports.has(report._id) ? 'ring-2 ring-purple-500 shadow-md bg-purple-50/50' : 'border-slate-200 shadow-sm'}`}>
-                  <img src={report.imageUrl} alt="Injured Cow" className="w-full sm:w-40 h-40 object-cover" />
+                  <img src={report.imageUrl} alt="Injured Cow" className="w-full sm:w-40 h-40 sm:h-auto object-cover" />
                   <div className="p-4 flex flex-col justify-between flex-1">
                     <div>
                       <div className="flex justify-between items-start mb-2">
@@ -232,8 +226,41 @@ export default function Dashboard() {
                       </div>
                       <p className="text-slate-700 text-sm line-clamp-2 mb-4">{report.description}</p>
                     </div>
+
+                    {/* 🟢 NEW: REPORTER CALLER ID & TRUST SCORE BLOCK */}
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mb-4">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-bold text-slate-800">👤 {report.reporterName || "Citizen"}</span>
+                        {report.reporterHistory > 0 ? (
+                          <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Star size={12} className="fill-green-600 text-green-600"/> Trusted ({report.reporterHistory})
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">New User</span>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                         <span className="text-sm text-slate-600 font-mono">{report.reporterPhone || "No number provided"}</span>
+                         {report.reporterPhone && (
+                           <div className="flex gap-2">
+                             <a href={`tel:${report.reporterPhone}`}>
+                               <Button size="sm" variant="outline" className="h-7 px-2 text-xs border-blue-200 text-blue-700 hover:bg-blue-50">
+                                 📞 Call
+                               </Button>
+                             </a>
+                             <a href={`https://wa.me/${report.reporterPhone.replace(/\D/g, '')}?text=Hi, calling from Cowscue NGO regarding the injured cow you reported. Can you share your live location?`} target="_blank" rel="noopener noreferrer">
+                               <Button size="sm" variant="outline" className="h-7 px-2 text-xs border-green-200 text-green-700 hover:bg-green-50">
+                                 💬 WhatsApp
+                               </Button>
+                             </a>
+                           </div>
+                         )}
+                      </div>
+                    </div>
+                    {/* END REPORTER BLOCK */}
+
                     <div className="flex flex-wrap gap-2">
-                      {/* 🟢 SELECT FOR ROUTING BUTTON */}
                       <Button 
                         size="sm" 
                         variant={selectedReports.has(report._id) ? "default" : "outline"}
