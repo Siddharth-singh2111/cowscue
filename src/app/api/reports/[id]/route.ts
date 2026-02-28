@@ -28,12 +28,12 @@ export async function PATCH(
 
       if (!updatedReport) {
         return NextResponse.json(
-          { error: "This case has already been accepted by another NGO." }, 
+          { error: "This case has already been accepted by another NGO or doesn't exist." }, 
           { status: 409 } 
         );
       }
       
-      // 🟢 2. Trigger Real-Time Status Update
+      // 🟢 Trigger Real-Time Status Update for Web Dashboard & WhatsApp Bot
       try {
         await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
       } catch (e) { console.error("Pusher error:", e); }
@@ -49,7 +49,11 @@ export async function PATCH(
         { new: true }
       );
 
-      // 🟢 3. Trigger Real-Time Status Update
+      if (!updatedReport) {
+        return NextResponse.json({ error: "Report not found." }, { status: 404 });
+      }
+
+      // 🟢 Trigger Real-Time Status Update for Web Dashboard & WhatsApp Bot
       try {
         await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
       } catch (e) { console.error("Pusher error:", e); }

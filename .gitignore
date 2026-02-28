@@ -16,6 +16,8 @@
 # next.js
 /.next/
 /out/
+cowscue-bot/.env
+cowscue-bot/node_modules/
 
 # production
 /build

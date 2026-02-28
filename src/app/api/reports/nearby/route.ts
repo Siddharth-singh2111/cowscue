@@ -22,18 +22,17 @@ export async function GET(req: Request) {
 
     // 2. The MongoDB Geospatial Query
     // $near requires a 2dsphere index (which we added in your Schema)
-    const reports = await Report.find({
-      status: "pending", // Only show active cases
+   const reports = await Report.find({
       location: {
         $near: {
           $geometry: {
             type: "Point",
-            coordinates: [parseFloat(lng), parseFloat(lat)], // [Lng, Lat] order is crucial
+            coordinates: [lng, lat],
           },
           $maxDistance: parseInt(radiusKm) * 1000, // Convert km to meters
         },
       },
-    });
+    }).sort({ createdAt: -1 });
 
     return NextResponse.json({ reports }, { status: 200 });
   } catch (error) {

@@ -141,8 +141,9 @@ export default function Dashboard() {
 
   const pendingReports = reports.filter(r => r.status === 'pending');
   const assignedReports = reports.filter(r => r.status === 'assigned');
-  const resolvedReports = reports.filter(r => r.status === 'resolved');
-
+  const resolvedReports = reports
+    .filter(r => r.status === 'resolved')
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   return (
     <div className="min-h-screen p-4 md:p-8 bg-slate-100">
       
