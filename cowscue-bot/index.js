@@ -78,7 +78,11 @@ client.on('ready', () => {
     console.log('✅ Cowscue Bot is online and connected to Next.js API!');
 });
 
-client.on('message', async (msg) => {
+// 🟢 CHANGED: Now using 'message_create' so it catches messages you send to yourself!
+client.on('message_create', async (msg) => {
+    // This logs everything to Render so we can debug!
+    console.log(`📩 Received message type: [${msg.type}] from: ${msg.from}`);
+
     const chat = await msg.getChat();
     if (chat.isGroup) return;
 
@@ -105,7 +109,7 @@ client.on('message', async (msg) => {
     // 2. Handle incoming Photo
     if (msg.hasMedia) {
         const media = await msg.downloadMedia();
-        if (media.mimetype.includes('image')) {
+        if (media && media.mimetype && media.mimetype.includes('image')) {
             state.base64Image = media.data; // Save image to memory
             await msg.reply("📸 Image saved! Now, click the 📎 attachment icon and send your *Location* to dispatch the NGO.");
             return;
