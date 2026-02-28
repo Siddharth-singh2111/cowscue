@@ -21,7 +21,9 @@ cowscue-bot/node_modules/
 
 # production
 /build
-
+# WhatsApp Bot Sessions
+cowscue-bot/.wwebjs_auth/
+cowscue-bot/.wwebjs_cache/
 # misc
 .DS_Store
 *.pem
