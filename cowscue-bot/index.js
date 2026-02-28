@@ -4,9 +4,19 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 const Pusher = require('pusher-js'); // 🟢 NEW: Real-time listener
+const express = require('express');
 
 // Map to hold temporary user data while they send photo then location
 const userState = new Map(); 
+const app = express();
+const PORT = process.env.PORT || 3001;
+app.get('/', (req, res) => {
+    res.send('✅ Cowscue WhatsApp Bot is running 24/7!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+});
 
 // Replace this with your Vercel URL when you deploy!
 const NEXTJS_API_URL = 'https://cowscue.vercel.app/api/webhook/whatsapp'; 
