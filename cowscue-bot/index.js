@@ -9,7 +9,7 @@ const Pusher = require('pusher-js'); // 🟢 NEW: Real-time listener
 const userState = new Map(); 
 
 // Replace this with your Vercel URL when you deploy!
-const NEXTJS_API_URL = 'http://localhost:3000/api/webhook/whatsapp'; 
+const NEXTJS_API_URL = 'https://cowscue.vercel.app/api/webhook/whatsapp'; 
 const BOT_SECRET_KEY = 'my_super_secret_password_123'; // Must match your Next.js .env
 
 const client = new Client({
