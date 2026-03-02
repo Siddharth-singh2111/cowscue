@@ -10,8 +10,13 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 export async function POST(req: Request) {
   try {
     // 1. Secret Key Auth (Only our Node.js bot knows this password)
+    // 1. Secret Key Auth (Diagnostic Version)
     const authHeader = req.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.BOT_SECRET_KEY}`) {
+    const expectedToken = `Bearer ${process.env.BOT_SECRET_KEY}`;
+
+    if (!authHeader || authHeader !== expectedToken) {
+      // 🟢 This will print a bright red error in your Vercel logs!
+      console.error(`🚨 AUTH MISMATCH! Received: [${authHeader}] | Expected: [${expectedToken}]`);
       return NextResponse.json({ error: "Unauthorized Bot" }, { status: 401 });
     }
 
