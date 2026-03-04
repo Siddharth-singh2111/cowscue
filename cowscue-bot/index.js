@@ -1,119 +1,299 @@
-require('dotenv').config();
+// index.js (in cowscue-bot folder)
+
+require('dotenv').config(); // Loads environment variables from a .env file
+
 const { Client, LocalAuth } = require('whatsapp-web.js');
+
 const qrcode = require('qrcode-terminal');
+
 const axios = require('axios');
-const Pusher = require('pusher-js');
+
+const Pusher = require('pusher-js'); // 🟢 NEW: Real-time listener
+
 const express = require('express');
 
-// Fail loudly on missing env vars
-const REQUIRED_ENV = ['PUSHER_KEY', 'PUSHER_CLUSTER', 'BOT_SECRET_KEY'];
-const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
-if (missing.length > 0) {
-  console.error(`❌ Missing env vars: ${missing.join(', ')}`);
-  process.exit(1);
-}
 
-const NEXTJS_API_URL = process.env.NEXTJS_API_URL || 'https://cowscue.vercel.app/api/webhook/whatsapp';
-const BOT_SECRET_KEY = process.env.BOT_SECRET_KEY;
+
+// Map to hold temporary user data while they send photo then location
+
 const userState = new Map();
 
 const app = express();
-app.get('/', (req, res) => res.send('✅ Cowscue Bot running!'));
-app.listen(process.env.PORT || 3001, () => console.log(`Health check on port ${process.env.PORT || 3001}`));
+
+const PORT = process.env.PORT || 3001;
+
+app.get('/', (req, res) => {
+
+    res.send('✅ Cowscue WhatsApp Bot is running 24/7!');
+
+});
+
+
+
+app.listen(PORT, () => {
+
+    console.log(`Server listening on port ${PORT}`);
+
+});
+
+
+
+// Replace this with your Vercel URL when you deploy!
+
+const NEXTJS_API_URL = 'https://cowscue.vercel.app/api/webhook/whatsapp';
+
+const BOT_SECRET_KEY = process.env.BOT_SECRET_KEY; // Must match your Next.js .env
+
+
 
 const client = new Client({
-  authStrategy: new LocalAuth(),
-  puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] },
+
+    authStrategy: new LocalAuth(),
+
+    puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+
 });
 
-const pusher = new Pusher(process.env.PUSHER_KEY, {
-  cluster: process.env.PUSHER_CLUSTER,
-  encrypted: true,
+
+
+// 🟢 NEW: Connect the bot to your Next.js real-time events!
+
+const pusher = new Pusher(process.env.PUSHER_KEY || 'YOUR_PUSHER_KEY', {
+
+  cluster: process.env.PUSHER_CLUSTER || 'YOUR_PUSHER_CLUSTER',
+
+  encrypted: true
+
 });
 
-pusher.subscribe('cowscue-alerts').bind('status-update', async (updated) => {
-  if (!updated.reporterId?.startsWith('whatsapp-')) return;
-  const phoneFormat = `${updated.reporterPhone}@c.us`;
-  try {
-    if (updated.status === 'assigned') {
-      await client.sendMessage(phoneFormat,
-        '🚑 *Rescue Update!*\n\nAn NGO has accepted your request and a driver is on the way.\n\n' +
-        (updated.ngoNotes ? `📝 NGO Note: ${updated.ngoNotes}` : 'Please stay near the location you pinned.')
-      );
-    } else if (updated.status === 'resolved') {
-      const rescues = (updated.reporterHistory || 0) + 1;
-      await client.sendMessage(phoneFormat,
-        '✅ *Rescue Successful!*\n\nThe animal is safely secured. 🐄❤️\n\n' +
-        `⭐ You now have ${rescues} successful rescues!\n\nThank you for giving a voice to the voiceless. 🙏`
-      );
+
+
+const channel = pusher.subscribe('cowscue-alerts');
+
+
+
+channel.bind('status-update', async (updatedReport) => {
+
+    console.log(`Received status update for report: ${updatedReport._id}`);
+
+
+
+    // Check if this report was made by a WhatsApp user
+
+    if (updatedReport.reporterId && updatedReport.reporterId.startsWith('whatsapp-')) {
+
+        const phoneFormat = `${updatedReport.reporterPhone}@c.us`; // Format it back for the bot
+
+
+
+        try {
+
+            if (updatedReport.status === 'assigned') {
+
+                await client.sendMessage(phoneFormat,
+
+                    "🚑 *Rescue Update!*\n\n" +
+
+                    "An NGO has accepted your rescue request and a driver is currently on the way to the location you pinned."
+
+                );
+
+            }
+
+            else if (updatedReport.status === 'resolved') {
+
+                // Calculate their new gamified total (previous history + 1)
+
+                const newTotal = updatedReport.reporterHistory + 1;
+
+               
+
+                await client.sendMessage(phoneFormat,
+
+                    "✅ *Rescue Successful!*\n\n" +
+
+                    "The cow has been safely secured by the NGO.\n\n" +
+
+                    `⭐ *Karma Points Updated:* You are now a Level ${newTotal > 5 ? '2' : '1'} Trusted Citizen with ${newTotal} successful rescues!\n\n` +
+
+                    "Thank you for giving a voice to the voiceless."
+
+                );
+
+            }
+
+        } catch (error) {
+
+            console.error("Failed to send WhatsApp status update:", error);
+
+        }
+
     }
-  } catch (e) { console.error('WhatsApp send failed:', e.message); }
+
 });
 
-client.on('qr', (qr) => { console.log('\n--- SCAN QR ---'); qrcode.generate(qr, { small: true }); });
-client.on('ready', () => console.log('✅ Cowscue Bot online!'));
-client.on('disconnected', (reason) => { console.warn(`Disconnected: ${reason}. Reconnecting...`); client.initialize(); });
+
+
+
+
+// --- STANDARD BOT LOGIC ---
+
+
+
+client.on('qr', (qr) => {
+
+    console.log('\n--- SCAN THIS QR CODE ---');
+
+    qrcode.generate(qr, { small: true });
+
+});
+
+
+
+client.on('ready', () => {
+
+    console.log('✅ Cowscue Bot is online and connected to Next.js API!');
+
+});
+
+
 
 client.on('message', async (msg) => {
-  const chat = await msg.getChat();
-  if (chat.isGroup) return;
 
-  const phone = msg.from;
-  if (!userState.has(phone)) userState.set(phone, { base64Image: null, step: 'idle' });
-  const state = userState.get(phone);
+    const chat = await msg.getChat();
 
-  await chat.sendStateTyping();
-  await new Promise((r) => setTimeout(r, 800));
+    if (chat.isGroup) return;
 
-  if (msg.type === 'chat') {
-    const lower = msg.body.toLowerCase().trim();
-    if (['help','hi','hello','start'].includes(lower)) {
-      await msg.reply('🚑 *Cowscue Emergency Bot*\n\n1️⃣ Send a *Photo* of the injured cow\n2️⃣ Then share your *Location* (📎 → Location)\n\nWe\'ll alert the nearest NGO instantly.');
-      return;
+
+
+    const phone = msg.from; // e.g., '919876543210@c.us'
+
+
+
+    // Create a temporary memory slot for this user if they don't have one
+
+    if (!userState.has(phone)) {
+
+        userState.set(phone, { base64Image: null, lat: null, lng: null });
+
     }
-    await msg.reply(state.step === 'waiting_location'
-      ? '📍 Got the photo! Now share your *Location* (📎 → Location).'
-      : '👋 Please send a *Photo* first. Type *help* for instructions.');
-    return;
-  }
 
-  if (msg.hasMedia) {
-    const media = await msg.downloadMedia();
-    if (media?.mimetype.includes('image')) {
-      state.base64Image = media.data;
-      state.step = 'waiting_location';
-      await msg.reply('📸 *Image saved!*\n\nNow tap 📎 and send your *Location* to dispatch the nearest NGO.');
-    } else {
-      await msg.reply('⚠️ Please send a *photo*, not a video or file.');
+    const state = userState.get(phone);
+
+
+
+    await chat.sendStateTyping();
+
+    await new Promise(resolve => setTimeout(resolve, 1000)); // Human delay
+
+
+
+    // 1. Handle incoming Text
+
+    if (msg.body && !msg.hasMedia && msg.type !== 'location') {
+
+        await msg.reply(
+
+            "🚑 *Cowscue Emergency Bot*\n\n" +
+
+            "Please send a *Photo* of the injured cow first."
+
+        );
+
+        return;
+
     }
-    return;
-  }
 
-  if (msg.type === 'location') {
-    if (!state.base64Image) { await msg.reply('❌ Please send a *photo* first, then share your location.'); return; }
-    await msg.reply('⏳ *Processing...* AI verifying image and dispatching NGOs. Please wait.');
-    try {
-      await axios.post(NEXTJS_API_URL, {
-        base64Image: state.base64Image,
-        phone: phone.replace('@c.us', ''),
-        latitude: msg.location.latitude,
-        longitude: msg.location.longitude,
-      }, { headers: { Authorization: `Bearer ${BOT_SECRET_KEY}` }, timeout: 30000 });
 
-      await msg.reply('✅ *Reported Successfully!*\n\nYou\'ll get a message when an NGO accepts the rescue. 🙏');
-      userState.delete(phone);
-    } catch (error) {
-      if (error.response?.status === 400) {
-        await msg.reply('❌ *AI could not detect a cow.*\n\nPlease send a clearer, well-lit photo.');
-        state.base64Image = null;
-        state.step = 'idle';
-      } else {
-        console.error('API error:', error.response?.data || error.message);
-        await msg.reply('❌ Server error. Please try again in a moment.');
-      }
+
+    // 2. Handle incoming Photo
+
+    if (msg.hasMedia) {
+
+        const media = await msg.downloadMedia();
+
+        if (media.mimetype.includes('image')) {
+
+            state.base64Image = media.data; // Save image to memory
+
+            await msg.reply("📸 Image saved! Now, click the 📎 attachment icon and send your *Location* to dispatch the NGO.");
+
+            return;
+
+        }
+
     }
-  }
+
+
+
+    // 3. Handle incoming Location & Trigger Next.js API
+
+    if (msg.type === 'location') {
+
+        if (!state.base64Image) {
+
+            await msg.reply("❌ Please send a photo of the cow first!");
+
+            return;
+
+        }
+
+
+
+        await msg.reply("⏳ Verifying image with AI and dispatching NGOs...");
+
+
+
+        try {
+
+            // Send data to Next.js Webhook
+
+            const response = await axios.post(NEXTJS_API_URL, {
+
+                base64Image: state.base64Image,
+
+                phone: phone.replace('@c.us', ''), // Clean up the phone string
+
+                latitude: msg.location.latitude,
+
+                longitude: msg.location.longitude
+
+            }, {
+
+                headers: { 'Authorization': `Bearer ${BOT_SECRET_KEY}` }
+
+            });
+
+
+
+            await msg.reply("✅ *Emergency Reported Successfully!*\n\nThe command center has been updated and drivers are notified.");
+
+            userState.delete(phone); // Clear memory
+
+           
+
+        } catch (error) {
+
+            if (error.response && error.response.status === 400) {
+
+                await msg.reply("❌ AI Verification Failed: We couldn't detect a cow. Please send a clearer photo.");
+
+                state.base64Image = null;
+
+            } else {
+
+                console.error(error.response?.data || error.message);
+
+                await msg.reply("❌ Server error. Please try again later.");
+
+            }
+
+        }
+
+    }
+
 });
 
-console.log('🚀 Starting Cowscue WhatsApp Bot...');
+
+
 client.initialize();
