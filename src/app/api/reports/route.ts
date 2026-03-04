@@ -1,127 +1,134 @@
-// src/app/api/reports/route.ts
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Report from "@/models/Report";
 import { currentUser } from "@clerk/nextjs/server";
 import { checkIsAdmin } from "@/lib/utils";
-import { GoogleGenerativeAI } from "@google/generative-ai"; 
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { pusherServer } from "@/lib/pusher";
 import { sendWhatsAppAlert } from "@/lib/twilio";
+import type { ReportSeverity } from "@/types";
 
-// Initialize Gemini with your API Key
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+
+async function verifyAndAssessSeverity(
+  imageUrl: string
+): Promise<{ isCattle: boolean; severity: ReportSeverity }> {
+  try {
+    const imageResp = await fetch(imageUrl);
+    const arrayBuffer = await imageResp.arrayBuffer();
+    const base64Data = Buffer.from(arrayBuffer).toString("base64");
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const prompt = `Analyze this image and answer TWO questions:
+1. Is there a cow, calf, bull, or cattle clearly visible? Answer: true or false
+2. Assess severity:
+   - "critical": bleeding, collapsed, broken limb, trapped
+   - "moderate": limping, wound, distressed but mobile
+   - "routine": healthy stray, minor/precautionary
+
+Respond ONLY in this exact JSON format:
+{"isCattle": true, "severity": "moderate"}`;
+
+    const result = await model.generateContent([
+      prompt,
+      { inlineData: { data: base64Data, mimeType: "image/jpeg" } },
+    ]);
+
+    const raw = result.response.text().trim().replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(raw);
+
+    return {
+      isCattle: parsed.isCattle === true,
+      severity: (["critical", "moderate", "routine"].includes(parsed.severity)
+        ? parsed.severity
+        : "routine") as ReportSeverity,
+    };
+  } catch (err) {
+    console.error("AI assessment failed, defaulting:", err);
+    return { isCattle: true, severity: "routine" };
+  }
+}
 
 export async function POST(req: Request) {
   try {
     const user = await currentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     await connectDB();
-    const { imageUrl, description, latitude, longitude,reporterPhone } = await req.json();
+    const body = await req.json();
+    const { imageUrl, description, latitude, longitude, reporterPhone } = body;
 
     if (!imageUrl || !description || !latitude || !longitude || !reporterPhone) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const phoneRegex = /^\+?[\d\s\-]{10,15}$/;
+    if (!phoneRegex.test(reporterPhone)) {
+      return NextResponse.json({ error: "Invalid phone number format." }, { status: 400 });
+    }
+
+    const { isCattle, severity } = await verifyAndAssessSeverity(imageUrl);
+    if (!isCattle) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "AI Verification Failed: No cow or cattle detected. Please upload a clearer photo." },
         { status: 400 }
       );
     }
 
-    // ==========================================
-    // 🤖 AI SPAM PREVENTION VERIFICATION
-    // ==========================================
-    try {
-      const imageResp = await fetch(imageUrl);
-      const arrayBuffer = await imageResp.arrayBuffer();
-      const base64Data = Buffer.from(arrayBuffer).toString('base64');
-
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = "Analyze this image. Is there a cow, calf, bull, or cattle clearly visible in it? Answer strictly with the word 'true' or 'false'.";
-      
-      const result = await model.generateContent([
-        prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: "image/jpeg", 
-          },
-        },
-      ]);
-
-      const aiText = result.response.text().trim().toLowerCase();
-      console.log("AI Verdict:", aiText);
-
-      if (!aiText.includes("true")) {
-        return NextResponse.json(
-          { error: "AI Verification Failed: We couldn't detect a cow/cattle in this image. Please upload a clearer photo to prevent spam." },
-          { status: 400 }
-        );
-      }
-    } catch (aiError) {
-      console.error("AI Check failed, proceeding anyway to avoid blocking real reports:", aiError);
-    }
-    // ==========================================
-const reporterName = user.firstName 
-      ? `${user.firstName} ${user.lastName || ""}`.trim() 
+    const reporterName = user.firstName
+      ? `${user.firstName} ${user.lastName || ""}`.trim()
       : "Anonymous Citizen";
 
-    // 2. Calculate their "Trust Score" (Karma) on the fly
-    const pastSuccessfulReports = await Report.countDocuments({ 
-      reporterId: user.id, 
-      status: 'resolved' 
-    });
-    // 5. Create the new Report in MongoDB
-   const newReport = await Report.create({
+    const pastSuccessfulReports = await Report.countDocuments({
       reporterId: user.id,
-      reporterName: reporterName,
-      reporterPhone: reporterPhone, // We will send this from the frontend
+      status: "resolved",
+    });
+
+    const newReport = await Report.create({
+      reporterId: user.id,
+      reporterName,
+      reporterPhone,
       reporterHistory: pastSuccessfulReports,
       imageUrl,
       description,
-      location: {
-        type: "Point",
-        coordinates: [longitude, latitude],
-      },
+      severity,
+      location: { type: "Point", coordinates: [longitude, latitude] },
       status: "pending",
     });
-    
-    // Trigger Pusher
-    try {
-      await pusherServer.trigger("cowscue-alerts", "new-report", newReport);
-    } catch (pusherError) {
-      console.error("Failed to trigger Pusher:", pusherError);
-    }
-    sendWhatsAppAlert(description, latitude, longitude);
+
+    await Promise.allSettled([
+      pusherServer
+        .trigger("cowscue-alerts", "new-report", newReport)
+        .catch((e) => console.error("Pusher failed:", e)),
+      sendWhatsAppAlert(description, severity, latitude, longitude).catch((e) =>
+        console.error("Twilio failed:", e)
+      ),
+    ]);
 
     return NextResponse.json(
       { message: "Report submitted successfully", report: newReport },
       { status: 201 }
     );
-    
-  } catch (error) { // 🟢 THIS IS WHAT WAS MISSING! 
+  } catch (error) {
     console.error("Error submitting report:", error);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const user = await currentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const email = user.emailAddresses[0]?.emailAddress;
     if (!checkIsAdmin(email)) {
-       return NextResponse.json({ error: "Forbidden: Admins only" }, { status: 403 });
+      return NextResponse.json({ error: "Forbidden: Admins only" }, { status: 403 });
     }
 
     await connectDB();
-    const reports = await Report.find({}).sort({ createdAt: -1 });
+    const reports = await Report.find({}).sort({ severity: 1, createdAt: -1 }).lean();
     return NextResponse.json({ reports }, { status: 200 });
   } catch (error) {
-     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

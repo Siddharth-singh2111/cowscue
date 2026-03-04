@@ -1,19 +1,20 @@
-// src/models/Report.ts
 import mongoose, { Schema, Document, Model } from "mongoose";
+import { ReportStatus, ReportSeverity } from "@/types";
 
 export interface IReport extends Document {
-  reporterId: string; 
-  reporterName: string;   // 🟢 NEW
-  reporterPhone: string;  // 🟢 NEW
-  reporterHistory: number; // 🟢 NEW: How many successful reports they had before this one
-  imageUrl: string;  
+  reporterId: string;
+  reporterName: string;
+  reporterPhone: string;
+  reporterHistory: number;
+  imageUrl: string;
   description: string;
-  status: "pending" | "assigned" | "resolved";
-  location: {
-    type: "Point";
-    coordinates: number[]; 
-  };
+  severity: ReportSeverity;
+  ngoNotes: string;
+  assignedTo: string;
+  status: ReportStatus;
+  location: { type: "Point"; coordinates: number[] };
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const ReportSchema: Schema = new Schema(
@@ -24,6 +25,13 @@ const ReportSchema: Schema = new Schema(
     reporterHistory: { type: Number, default: 0 },
     imageUrl: { type: String, required: true },
     description: { type: String, required: true },
+    severity: {
+      type: String,
+      enum: ["critical", "moderate", "routine"],
+      default: "routine",
+    },
+    ngoNotes: { type: String, default: "" },
+    assignedTo: { type: String, default: "" },
     status: {
       type: String,
       enum: ["pending", "assigned", "resolved"],
@@ -38,6 +46,10 @@ const ReportSchema: Schema = new Schema(
 );
 
 ReportSchema.index({ location: "2dsphere" });
+ReportSchema.index({ reporterId: 1, status: 1 });
+ReportSchema.index({ severity: 1, status: 1, createdAt: -1 });
 
-const Report: Model<IReport> = mongoose.models.Report || mongoose.model<IReport>("Report", ReportSchema);
+const Report: Model<IReport> =
+  mongoose.models.Report || mongoose.model<IReport>("Report", ReportSchema);
+
 export default Report;
