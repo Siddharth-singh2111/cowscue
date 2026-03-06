@@ -38,11 +38,9 @@ app.listen(PORT, () => {
 
 
 
-// Replace this with your Vercel URL when you deploy!
-
 const NEXTJS_API_URL = 'https://cowscue.vercel.app/api/webhook/whatsapp';
 
-const BOT_SECRET_KEY = process.env.BOT_SECRET_KEY; // Must match your Next.js .env
+const BOT_SECRET_KEY = process.env.BOT_SECRET_KEY; 
 
 
 
@@ -54,9 +52,6 @@ const client = new Client({
 
 });
 
-
-
-// 🟢 NEW: Connect the bot to your Next.js real-time events!
 
 const pusher = new Pusher(process.env.PUSHER_KEY || 'YOUR_PUSHER_KEY', {
 
@@ -252,7 +247,7 @@ client.on('message', async (msg) => {
 
                 base64Image: state.base64Image,
 
-                phone: phone.replace('@c.us', ''), // Clean up the phone string
+                phone: phone.replace('@c.us', ''),
 
                 latitude: msg.location.latitude,
 

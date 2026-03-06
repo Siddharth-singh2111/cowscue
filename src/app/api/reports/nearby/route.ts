@@ -29,7 +29,7 @@ export async function GET(req: Request) {
             type: "Point",
             coordinates: [lng, lat],
           },
-          $maxDistance: parseInt(radiusKm) * 1000, // Convert km to meters
+          $maxDistance: parseInt(radiusKm) * 1000,
         },
       },
     }).sort({ createdAt: -1 });
