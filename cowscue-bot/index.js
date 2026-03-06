@@ -1,294 +1,164 @@
 // index.js (in cowscue-bot folder)
-
 require('dotenv').config(); // Loads environment variables from a .env file
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
-
 const qrcode = require('qrcode-terminal');
-
 const axios = require('axios');
-
-const Pusher = require('pusher-js'); // 🟢 NEW: Real-time listener
-
+const Pusher = require('pusher-js'); // Real-time listener
 const express = require('express');
 
-
-
 // Map to hold temporary user data while they send photo then location
-
 const userState = new Map();
-
 const app = express();
-
 const PORT = process.env.PORT || 3001;
 
 app.get('/', (req, res) => {
-
     res.send('✅ Cowscue WhatsApp Bot is running 24/7!');
-
 });
-
-
 
 app.listen(PORT, () => {
-
     console.log(`Server listening on port ${PORT}`);
-
 });
-
-
 
 const NEXTJS_API_URL = 'https://cowscue.vercel.app/api/webhook/whatsapp';
-
 const BOT_SECRET_KEY = process.env.BOT_SECRET_KEY; 
 
-
-
 const client = new Client({
-
     authStrategy: new LocalAuth(),
-
     puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
-
 });
-
 
 const pusher = new Pusher(process.env.PUSHER_KEY || 'YOUR_PUSHER_KEY', {
-
   cluster: process.env.PUSHER_CLUSTER || 'YOUR_PUSHER_CLUSTER',
-
   encrypted: true
-
 });
-
-
 
 const channel = pusher.subscribe('cowscue-alerts');
 
-
-
 channel.bind('status-update', async (updatedReport) => {
-
     console.log(`Received status update for report: ${updatedReport._id}`);
 
-
-
     // Check if this report was made by a WhatsApp user
-
     if (updatedReport.reporterId && updatedReport.reporterId.startsWith('whatsapp-')) {
-
         const phoneFormat = `${updatedReport.reporterPhone}@c.us`; // Format it back for the bot
 
-
-
         try {
-
             if (updatedReport.status === 'assigned') {
-
                 await client.sendMessage(phoneFormat,
-
                     "🚑 *Rescue Update!*\n\n" +
-
                     "An NGO has accepted your rescue request and a driver is currently on the way to the location you pinned."
-
                 );
-
             }
-
             else if (updatedReport.status === 'resolved') {
-
                 // Calculate their new gamified total (previous history + 1)
-
                 const newTotal = updatedReport.reporterHistory + 1;
-
-               
-
+                
                 await client.sendMessage(phoneFormat,
-
                     "✅ *Rescue Successful!*\n\n" +
-
                     "The cow has been safely secured by the NGO.\n\n" +
-
                     `⭐ *Karma Points Updated:* You are now a Level ${newTotal > 5 ? '2' : '1'} Trusted Citizen with ${newTotal} successful rescues!\n\n` +
-
                     "Thank you for giving a voice to the voiceless."
-
                 );
-
             }
-
         } catch (error) {
-
             console.error("Failed to send WhatsApp status update:", error);
-
         }
-
     }
-
 });
-
-
-
 
 
 // --- STANDARD BOT LOGIC ---
 
-
-
 client.on('qr', (qr) => {
-
     console.log('\n--- SCAN THIS QR CODE ---');
-
     qrcode.generate(qr, { small: true });
-
 });
-
-
 
 client.on('ready', () => {
-
     console.log('✅ Cowscue Bot is online and connected to Next.js API!');
-
 });
 
-
-
-client.on('message', async (msg) => {
+// 🟢 CHANGED: Now using 'message_create' to catch absolutely everything!
+client.on('message_create', async (msg) => {
+    // 🟢 NEW: Heavy logging so we can see exactly what happens in Render!
+    console.log(`\n📩 --- NEW MESSAGE DETECTED ---`);
+    console.log(`From: ${msg.from}`);
+    console.log(`Type: ${msg.type}`);
+    console.log(`Has Media: ${msg.hasMedia}`);
 
     const chat = await msg.getChat();
-
     if (chat.isGroup) return;
-
-
 
     const phone = msg.from; // e.g., '919876543210@c.us'
 
-
-
     // Create a temporary memory slot for this user if they don't have one
-
     if (!userState.has(phone)) {
-
         userState.set(phone, { base64Image: null, lat: null, lng: null });
-
     }
-
     const state = userState.get(phone);
 
-
-
     await chat.sendStateTyping();
-
     await new Promise(resolve => setTimeout(resolve, 1000)); // Human delay
 
-
-
     // 1. Handle incoming Text
-
     if (msg.body && !msg.hasMedia && msg.type !== 'location') {
-
+        console.log(`🤖 Replying to text message...`);
         await msg.reply(
-
             "🚑 *Cowscue Emergency Bot*\n\n" +
-
             "Please send a *Photo* of the injured cow first."
-
         );
-
         return;
-
     }
-
-
 
     // 2. Handle incoming Photo
-
     if (msg.hasMedia) {
-
+        console.log(`📸 Downloading media...`);
         const media = await msg.downloadMedia();
-
-        if (media.mimetype.includes('image')) {
-
+        if (media && media.mimetype && media.mimetype.includes('image')) {
             state.base64Image = media.data; // Save image to memory
-
+            console.log(`✅ Image saved to bot memory. Asking for location...`);
             await msg.reply("📸 Image saved! Now, click the 📎 attachment icon and send your *Location* to dispatch the NGO.");
-
             return;
-
         }
-
     }
 
-
-
     // 3. Handle incoming Location & Trigger Next.js API
-
     if (msg.type === 'location') {
-
+        console.log(`📍 Location received! Checking for image...`);
         if (!state.base64Image) {
-
             await msg.reply("❌ Please send a photo of the cow first!");
-
             return;
-
         }
-
-
 
         await msg.reply("⏳ Verifying image with AI and dispatching NGOs...");
 
-
-
         try {
-
+            console.log(`🚀 Sending data to Vercel: ${NEXTJS_API_URL}`);
+            
             // Send data to Next.js Webhook
-
             const response = await axios.post(NEXTJS_API_URL, {
-
                 base64Image: state.base64Image,
-
                 phone: phone.replace('@c.us', ''),
-
                 latitude: msg.location.latitude,
-
                 longitude: msg.location.longitude
-
             }, {
-
                 headers: { 'Authorization': `Bearer ${BOT_SECRET_KEY}` }
-
             });
 
-
-
+            console.log(`✅ Vercel accepted the report!`);
             await msg.reply("✅ *Emergency Reported Successfully!*\n\nThe command center has been updated and drivers are notified.");
-
             userState.delete(phone); // Clear memory
-
-           
-
+            
         } catch (error) {
-
+            console.error(`🚨 VERCEL REJECTED THE REQUEST:`, error.response?.data || error.message);
             if (error.response && error.response.status === 400) {
-
                 await msg.reply("❌ AI Verification Failed: We couldn't detect a cow. Please send a clearer photo.");
-
                 state.base64Image = null;
-
             } else {
-
-                console.error(error.response?.data || error.message);
-
                 await msg.reply("❌ Server error. Please try again later.");
-
             }
-
         }
-
     }
-
 });
-
-
 
 client.initialize();
