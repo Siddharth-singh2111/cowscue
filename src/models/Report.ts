@@ -3,12 +3,14 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IReport extends Document {
   reporterId: string; 
-  reporterName: string;   // 🟢 NEW
-  reporterPhone: string;  // 🟢 NEW
-  reporterHistory: number; // 🟢 NEW: How many successful reports they had before this one
+  reporterName: string;   
+  reporterPhone: string;  
+  reporterHistory: number; 
   imageUrl: string;  
   description: string;
   status: "pending" | "assigned" | "resolved";
+  severity: "CRITICAL" | "MODERATE" | "ROUTINE";
+  injuryType: string;
   location: {
     type: "Point";
     coordinates: number[]; 
@@ -29,6 +31,12 @@ const ReportSchema: Schema = new Schema(
       enum: ["pending", "assigned", "resolved"],
       default: "pending",
     },
+    severity: {
+      type: String,
+      enum: ["CRITICAL", "MODERATE", "ROUTINE"],
+      default: "ROUTINE",
+    },
+    injuryType: { type: String, default: "Unknown" },
     location: {
       type: { type: String, enum: ["Point"], required: true },
       coordinates: { type: [Number], required: true },

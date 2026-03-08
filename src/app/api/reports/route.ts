@@ -28,57 +28,72 @@ export async function POST(req: Request) {
       );
     }
 
-    // ==========================================
-    // 🤖 AI SPAM PREVENTION VERIFICATION
-    // ==========================================
+    let severity = "ROUTINE";
+    let injuryType = "Unspecified";
+
     try {
       const imageResp = await fetch(imageUrl);
       const arrayBuffer = await imageResp.arrayBuffer();
       const base64Data = Buffer.from(arrayBuffer).toString('base64');
 
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = "Analyze this image. Is there a cow, calf, bull, or cattle clearly visible in it? Answer strictly with the word 'true' or 'false'.";
+      
+      // 🟢 The Upgraded Prompt
+      const prompt = `Analyze this image. 
+      1. Is there a cow, calf, bull, or cattle clearly visible? (true/false)
+      2. Assess the medical severity: 'CRITICAL' (bleeding, unable to stand, severe trauma), 'MODERATE' (limping, visible wounds but stable), or 'ROUTINE' (starving, stray, minor issues).
+      3. Provide a very brief 3-5 word description of the visible injury/condition.
+      
+      Return EXACTLY and ONLY a valid JSON object in this format: 
+      {"isCow": true, "severity": "CRITICAL", "injuryType": "severe leg wound"}`;
       
       const result = await model.generateContent([
         prompt,
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: "image/jpeg", 
-          },
-        },
+        { inlineData: { data: base64Data, mimeType: "image/jpeg" } },
       ]);
 
-      const aiText = result.response.text().trim().toLowerCase();
-      console.log("AI Verdict:", aiText);
+      let aiText = result.response.text().trim();
+      
+      // Clean up markdown formatting if Gemini adds it (```json ... ```)
+      if (aiText.startsWith("```json")) aiText = aiText.replace(/```json/g, "").replace(/```/g, "").trim();
+      else if (aiText.startsWith("```")) aiText = aiText.replace(/```/g, "").trim();
 
-      if (!aiText.includes("true")) {
+      const aiData = JSON.parse(aiText);
+      console.log("🤖 AI Triage Result:", aiData);
+
+      if (!aiData.isCow) {
         return NextResponse.json(
           { error: "AI Verification Failed: We couldn't detect a cow/cattle in this image. Please upload a clearer photo to prevent spam." },
           { status: 400 }
         );
       }
+
+      severity = aiData.severity || "ROUTINE";
+      injuryType = aiData.injuryType || "Not clearly visible";
+
     } catch (aiError) {
-      console.error("AI Check failed, proceeding anyway to avoid blocking real reports:", aiError);
+      console.error("AI Check failed, proceeding with default ROUTINE severity:", aiError);
     }
     // ==========================================
-const reporterName = user.firstName 
+
+    const reporterName = user.firstName 
       ? `${user.firstName} ${user.lastName || ""}`.trim() 
       : "Anonymous Citizen";
 
-    // 2. Calculate their "Trust Score" (Karma) on the fly
     const pastSuccessfulReports = await Report.countDocuments({ 
       reporterId: user.id, 
       status: 'resolved' 
     });
-    // 5. Create the new Report in MongoDB
-   const newReport = await Report.create({
+
+    const newReport = await Report.create({
       reporterId: user.id,
       reporterName: reporterName,
-      reporterPhone: reporterPhone, // We will send this from the frontend
+      reporterPhone: reporterPhone, 
       reporterHistory: pastSuccessfulReports,
       imageUrl,
       description,
+      severity,       
+      injuryType,     
       location: {
         type: "Point",
         coordinates: [longitude, latitude],
@@ -99,7 +114,7 @@ const reporterName = user.firstName
       { status: 201 }
     );
     
-  } catch (error) { // 🟢 THIS IS WHAT WAS MISSING! 
+  } catch (error) { 
     console.error("Error submitting report:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },

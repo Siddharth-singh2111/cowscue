@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SignInButton, SignedIn, SignedOut, UserButton, useUser } from "@clerk/nextjs";
-import { ShieldPlus, Map, LayoutDashboard, HeartHandshake } from "lucide-react";
+import { ShieldPlus, Map, LayoutDashboard, HeartHandshake,Trophy } from "lucide-react";
+
 
 const Navbar = () => {
   const { user } = useUser();
@@ -61,7 +62,17 @@ const Navbar = () => {
                   My Impact
                 </Button>
               </Link>
-
+              <Link href="/leaderboard">
+                <Button 
+                  variant={pathname === "/leaderboard" ? "secondary" : "ghost"} 
+                  className={`hidden sm:flex ${pathname === "/leaderboard" ? "bg-orange-50 text-orange-600" : "text-white"}`}
+                >
+                  <Trophy size={18} className="mr-2" /> 
+                  Leaderboard
+                </Button>
+              </Link>
+              
+              <Link href="/my-reports"></Link>
               <Link href="/report">
                 <Button className="bg-orange-600 hover:bg-orange-700 text-white shadow-md transition-all hover:shadow-lg">
                   <span className="hidden sm:inline">Report Emergency</span>
@@ -91,6 +102,10 @@ const Navbar = () => {
            <Link href="/" className={`flex flex-col items-center p-2 rounded-lg ${pathname === "/" ? "text-orange-600 bg-orange-50" : "text-slate-500"}`}>
              <ShieldPlus size={20} />
              <span className="text-[10px] font-medium mt-1">Home</span>
+           </Link>
+           <Link href="/leaderboard" className={`flex flex-col items-center p-2 rounded-lg ${pathname === "/leaderboard" ? "text-orange-600 bg-orange-50" : "text-slate-500"}`}>
+             <Trophy size={20} />
+             <span className="text-[10px] font-medium mt-1">Rank</span>
            </Link>
            <Link href="/my-reports" className={`flex flex-col items-center p-2 rounded-lg ${pathname === "/my-reports" ? "text-orange-600 bg-orange-50" : "text-slate-500"}`}>
              <Map size={20} />

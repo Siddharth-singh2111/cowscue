@@ -25,6 +25,8 @@ interface Report {
   imageUrl: string;
   description: string;
   status: string;
+  severity: string;  
+  injuryType: string; 
   createdAt: string;
   location: { coordinates: number[] };
 }
@@ -138,8 +140,10 @@ export default function Dashboard() {
   };
 
   if (!isLoaded) return null;
-
-  const pendingReports = reports.filter(r => r.status === 'pending');
+  const severityWeight: Record<string, number> = { "CRITICAL": 3, "MODERATE": 2, "ROUTINE": 1 };
+  const pendingReports = reports
+    .filter(r => r.status === 'pending')
+    .sort((a, b) => (severityWeight[b.severity] || 0) - (severityWeight[a.severity] || 0));
   const assignedReports = reports.filter(r => r.status === 'assigned');
   const resolvedReports = reports
     .filter(r => r.status === 'resolved')
@@ -222,13 +226,28 @@ export default function Dashboard() {
                   <div className="p-4 flex flex-col justify-between flex-1">
                     <div>
                       <div className="flex justify-between items-start mb-2">
-                        <Badge className={`${report.status === 'pending' ? 'bg-red-500' : 'bg-yellow-500'}`}>{report.status.toUpperCase()}</Badge>
-                        <span className="text-xs text-slate-400">{new Date(report.createdAt).toLocaleDateString()}</span>
-                      </div>
+    <div className="flex gap-2 flex-wrap">
+      <Badge className={`${report.status === 'pending' ? 'bg-red-500' : 'bg-yellow-500'}`}>
+        {report.status.toUpperCase()}
+      </Badge>
+      
+      {/* 🟢 NEW: AI Triage Badges */}
+      {report.severity === 'CRITICAL' && <Badge className="bg-red-600 animate-pulse">🚨 CRITICAL</Badge>}
+      {report.severity === 'MODERATE' && <Badge className="bg-orange-500">⚠️ MODERATE</Badge>}
+      {report.severity === 'ROUTINE' && <Badge className="bg-blue-500">ℹ️ ROUTINE</Badge>}
+      
+      {report.injuryType && (
+        <Badge variant="outline" className="border-slate-300 text-slate-600 bg-white">
+          🤖 AI: {report.injuryType}
+        </Badge>
+      )}
+    </div>
+    <span className="text-xs text-slate-400 shrink-0 ml-2">{new Date(report.createdAt).toLocaleDateString()}</span>
+  </div>
                       <p className="text-slate-700 text-sm line-clamp-2 mb-4">{report.description}</p>
                     </div>
 
-                    {/* 🟢 NEW: REPORTER CALLER ID & TRUST SCORE BLOCK */}
+                    {/*  REPORTER CALLER ID & TRUST SCORE BLOCK */}
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mb-4">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-bold text-slate-800">👤 {report.reporterName || "Citizen"}</span>
