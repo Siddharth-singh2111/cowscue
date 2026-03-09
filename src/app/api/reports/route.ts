@@ -128,8 +128,9 @@ export async function GET(req: Request) {
     const user = await currentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const email = user.emailAddresses[0]?.emailAddress;
-    if (!checkIsAdmin(email)) {
+    // 🟢 Read Role from Clerk Metadata
+    const role = user.publicMetadata?.role;
+    if (role !== "ngo") {
        return NextResponse.json({ error: "Forbidden: Admins only" }, { status: 403 });
     }
 
