@@ -8,7 +8,8 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { MapPin, AlertTriangle, Truck, CheckCircle2, Clock, Route as RouteIcon, Loader2, Star } from "lucide-react"; // 🟢 Added Star icon
+// 🟢 NEW: Imported Navigation and MessageCircle
+import { MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle } from "lucide-react"; 
 import { pusherClient } from "@/lib/pusher";
 
 // Dynamically import Map
@@ -25,7 +26,7 @@ interface Report {
   imageUrl: string;
   description: string;
   status: string;
-  severity: string;  
+  severity: string;   
   injuryType: string; 
   createdAt: string;
   location: { coordinates: number[] };
@@ -106,7 +107,6 @@ export default function Dashboard() {
 
   const calculateOptimizedRoute = async () => {
     if (!userLocation) return alert("Waiting for your GPS location...");
-    
     setIsRouting(true);
     try {
       const selectedCows = reports.filter(r => selectedReports.has(r._id));
@@ -139,15 +139,47 @@ export default function Dashboard() {
     setSelectedReports(newSet);
   };
 
+  // 🟢 NEW: Google Maps Multi-Stop Generator
+  const generateGoogleMapsUrl = () => {
+    if (!userLocation || selectedReports.size === 0) return "";
+    const selectedCows = reports.filter(r => selectedReports.has(r._id));
+    
+    // Base URL starting at Command Center
+    let url = `https://www.google.com/maps/dir/${userLocation.lat},${userLocation.lng}`;
+    
+    // Add each cow's location as a waypoint
+    selectedCows.forEach(cow => {
+      url += `/${cow.location.coordinates[1]},${cow.location.coordinates[0]}`;
+    });
+    return url;
+  };
+
+  const handleSendRouteToDriver = () => {
+    const url = generateGoogleMapsUrl();
+    if (!url) return;
+    const message = `🚑 *Suraksha Rescue Dispatch*\n\nYou have been assigned ${selectedReports.size} rescue(s). Click the link below to start turn-by-turn navigation:\n\n📍 ${url}`;
+    // Opens WhatsApp to select a contact
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+  };
+
+  const handleOpenGoogleMaps = () => {
+     const url = generateGoogleMapsUrl();
+     if(url) window.open(url, "_blank");
+  };
+
   if (!isLoaded) return null;
+
   const severityWeight: Record<string, number> = { "CRITICAL": 3, "MODERATE": 2, "ROUTINE": 1 };
+  
   const pendingReports = reports
     .filter(r => r.status === 'pending')
     .sort((a, b) => (severityWeight[b.severity] || 0) - (severityWeight[a.severity] || 0));
+
   const assignedReports = reports.filter(r => r.status === 'assigned');
   const resolvedReports = reports
     .filter(r => r.status === 'resolved')
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
   return (
     <div className="min-h-screen p-4 md:p-8 bg-slate-100">
       
@@ -199,20 +231,36 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div>
           {/* BATCH ROUTING CONTROLS */}
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
               <AlertTriangle className="text-red-500" /> Action Required
             </h2>
             
-            {selectedReports.size >= 2 && (
-              <Button 
-                onClick={calculateOptimizedRoute} 
-                disabled={isRouting}
-                className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg animate-in slide-in-from-top-4"
-              >
-                {isRouting ? <Loader2 className="animate-spin mr-2" size={16}/> : <RouteIcon className="mr-2" size={16}/>}
-                Optimize Batch Route
-              </Button>
+            {/* 🟢 NEW: Multi-button Dispatcher Controls */}
+            {selectedReports.size > 0 && (
+              <div className="flex flex-wrap gap-2 animate-in slide-in-from-top-4 w-full sm:w-auto">
+                {selectedReports.size >= 2 && (
+                  <Button 
+                    onClick={calculateOptimizedRoute} 
+                    disabled={isRouting}
+                    variant="outline"
+                    className="border-purple-200 text-purple-700 hover:bg-purple-50 flex-1 sm:flex-none"
+                  >
+                    {isRouting ? <Loader2 className="animate-spin mr-2" size={16}/> : <RouteIcon className="mr-2" size={16}/>}
+                    <span className="hidden sm:inline">Optimize</span>
+                  </Button>
+                )}
+                
+                <Button onClick={handleOpenGoogleMaps} className="bg-blue-600 hover:bg-blue-700 text-white flex-1 sm:flex-none">
+                    <Navigation className="mr-2" size={16}/> 
+                    Nav
+                </Button>
+
+                <Button onClick={handleSendRouteToDriver} className="bg-[#25D366] hover:bg-[#1DA851] text-white shadow-md flex-1 sm:flex-none">
+                    <MessageCircle className="mr-2" size={16}/> 
+                    Dispatch
+                </Button>
+              </div>
             )}
           </div>
 
@@ -226,28 +274,26 @@ export default function Dashboard() {
                   <div className="p-4 flex flex-col justify-between flex-1">
                     <div>
                       <div className="flex justify-between items-start mb-2">
-    <div className="flex gap-2 flex-wrap">
-      <Badge className={`${report.status === 'pending' ? 'bg-red-500' : 'bg-yellow-500'}`}>
-        {report.status.toUpperCase()}
-      </Badge>
-      
-      {/* 🟢 NEW: AI Triage Badges */}
-      {report.severity === 'CRITICAL' && <Badge className="bg-red-600 animate-pulse">🚨 CRITICAL</Badge>}
-      {report.severity === 'MODERATE' && <Badge className="bg-orange-500">⚠️ MODERATE</Badge>}
-      {report.severity === 'ROUTINE' && <Badge className="bg-blue-500">ℹ️ ROUTINE</Badge>}
-      
-      {report.injuryType && (
-        <Badge variant="outline" className="border-slate-300 text-slate-600 bg-white">
-          🤖 AI: {report.injuryType}
-        </Badge>
-      )}
-    </div>
-    <span className="text-xs text-slate-400 shrink-0 ml-2">{new Date(report.createdAt).toLocaleDateString()}</span>
-  </div>
+                        <div className="flex gap-2 flex-wrap">
+                          <Badge className={`${report.status === 'pending' ? 'bg-red-500' : 'bg-yellow-500'}`}>
+                            {report.status.toUpperCase()}
+                          </Badge>
+                          
+                          {report.severity === 'CRITICAL' && <Badge className="bg-red-600 animate-pulse">🚨 CRITICAL</Badge>}
+                          {report.severity === 'MODERATE' && <Badge className="bg-orange-500">⚠️ MODERATE</Badge>}
+                          {report.severity === 'ROUTINE' && <Badge className="bg-blue-500">ℹ️ ROUTINE</Badge>}
+                          
+                          {report.injuryType && (
+                            <Badge variant="outline" className="border-slate-300 text-slate-600 bg-white">
+                              🤖 AI: {report.injuryType}
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-xs text-slate-400 shrink-0 ml-2">{new Date(report.createdAt).toLocaleDateString()}</span>
+                      </div>
                       <p className="text-slate-700 text-sm line-clamp-2 mb-4">{report.description}</p>
                     </div>
 
-                    {/*  REPORTER CALLER ID & TRUST SCORE BLOCK */}
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mb-4">
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-sm font-bold text-slate-800">👤 {report.reporterName || "Citizen"}</span>
@@ -278,7 +324,6 @@ export default function Dashboard() {
                          )}
                       </div>
                     </div>
-                    {/* END REPORTER BLOCK */}
 
                     <div className="flex flex-wrap gap-2">
                       <Button 
