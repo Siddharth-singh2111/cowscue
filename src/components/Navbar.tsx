@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Image from "next/image"; // 🟢 1. Import the Image component
 import { Button } from "@/components/ui/button";
 import { SignInButton, SignedIn, SignedOut, UserButton, useUser } from "@clerk/nextjs";
-import { ShieldPlus, Map, LayoutDashboard, HeartHandshake, Trophy } from "lucide-react";
+import { Map, LayoutDashboard, HeartHandshake, Trophy } from "lucide-react"; // Removed ShieldPlus
 
 const Navbar = () => {
   const { user } = useUser();
   const pathname = usePathname(); 
 
-  // 🟢 NEW: Read role directly from Clerk Metadata
   const role = user?.publicMetadata?.role as string | undefined;
   const isAdmin = role === "ngo";
 
@@ -21,19 +21,25 @@ const Navbar = () => {
           
           {/* LEFT: Logo */}
           <div className="flex-shrink-0 flex items-center gap-2">
-            <div className="bg-orange-100 p-2 rounded-xl text-orange-600">
-              <ShieldPlus size={24} />
-            </div>
-            <Link href="/" className="font-extrabold text-2xl text-white tracking-tight hover:opacity-80 transition-opacity">
-              Cow<span className="text-orange-600">Scue</span>
+            <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+              <div className="relative w-10 h-10 flex items-center justify-center bg-white rounded-xl overflow-hidden p-1">
+                <Image 
+                  src="/image.png" 
+                  alt="Cowscue Logo" 
+                  fill
+                  className="object-contain"
+                  priority 
+                />
+              </div>
+              <span className="font-extrabold text-2xl text-white tracking-tight hidden sm:block">
+                Cow<span className="text-orange-600">Scue</span>
+              </span>
             </Link>
           </div>
 
           {/* RIGHT: Navigation & Auth */}
           <div className="flex items-center gap-2 sm:gap-4">
             <SignedIn>
-              
-              {/* 🟢 CONDITIONAL RENDERING BASED ON ROLE */}
               {isAdmin ? (
                 /* --- NGO ADMIN VIEW --- */
                 <Link href="/dashboard">
@@ -93,22 +99,23 @@ const Navbar = () => {
         </div>
       </div>
 
-      {/* 🟢 MOBILE BOTTOM NAVIGATION */}
+      {/* MOBILE BOTTOM NAVIGATION */}
       <SignedIn>
         <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 pb-safe z-50 flex justify-around p-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
            <Link href="/" className={`flex flex-col items-center p-2 rounded-lg ${pathname === "/" ? "text-orange-600 bg-orange-50" : "text-slate-500"}`}>
-             <ShieldPlus size={20} />
+             {/* 🟢 3. Optional: You can replace the mobile home icon with your logo too if you want! */}
+             <div className="relative w-6 h-6">
+                <Image src="/logo.png" alt="Home" fill className="object-contain" />
+             </div>
              <span className="text-[10px] font-medium mt-1">Home</span>
            </Link>
            
            {isAdmin ? (
-             /* Mobile NGO View */
              <Link href="/dashboard" className={`flex flex-col items-center p-2 rounded-lg ${pathname === "/dashboard" ? "text-orange-600 bg-orange-50" : "text-slate-500"}`}>
                <LayoutDashboard size={20} />
                <span className="text-[10px] font-medium mt-1">Dash</span>
              </Link>
            ) : (
-             /* Mobile Citizen View */
              <>
                <Link href="/my-reports" className={`flex flex-col items-center p-2 rounded-lg ${pathname === "/my-reports" ? "text-orange-600 bg-orange-50" : "text-slate-500"}`}>
                  <Map size={20} />
