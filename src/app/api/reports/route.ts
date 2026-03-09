@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Report from "@/models/Report";
 import { currentUser } from "@clerk/nextjs/server";
-import { checkIsAdmin } from "@/lib/utils";
 import { GoogleGenerativeAI } from "@google/generative-ai"; 
 import { pusherServer } from "@/lib/pusher";
 import { sendWhatsAppAlert } from "@/lib/twilio";
