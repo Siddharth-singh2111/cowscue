@@ -214,6 +214,8 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2">
             🚑 Suraksha Command Center
           </h1>
+
+          
           <p className="text-slate-500 mt-1">
             {userLocation ? `Monitoring ${radius}km radius` : "Global Overview"} • {reports.length} Total Records
           </p>
