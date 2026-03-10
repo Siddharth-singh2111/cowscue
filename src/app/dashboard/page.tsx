@@ -8,7 +8,7 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Flame, MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle } from "lucide-react";
+import { Power,Flame, MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle } from "lucide-react";
 import { pusherClient } from "@/lib/pusher";
 
 const RescueMap = dynamic(() => import("@/components/Map"), {
@@ -38,6 +38,9 @@ export default function Dashboard() {
   const [radius, setRadius] = useState([15]);
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const initialStatus = user?.publicMetadata?.isAcceptingRescues !== false;
+  const [isAccepting, setIsAccepting] = useState(initialStatus);
+  const [isToggling, setIsToggling] = useState(false);
 
   // ROUTING STATE
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
@@ -46,8 +49,7 @@ export default function Dashboard() {
 
  
 
-// Delete this line completely:
-  // const ADMIN_EMAILS = ["secretwars495@gmail.com", "sahilsinghrajpoot45@gmail.com"];
+
 
   useEffect(() => {
     if (isLoaded) {
@@ -75,6 +77,26 @@ export default function Dashboard() {
     channel.bind("status-update", (updatedReport: Report) => setReports((prev) => prev.map(r => r._id === updatedReport._id ? updatedReport : r)));
     return () => { pusherClient.unsubscribe("cowscue-alerts"); };
   }, []);
+  const handleToggleStatus = async () => {
+    setIsToggling(true);
+    const newState = !isAccepting;
+    setIsAccepting(newState); // Optimistic UI update for instant feedback
+    
+    try {
+      const res = await fetch("/api/ngo/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isAccepting: newState }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+    } catch (error) {
+      setIsAccepting(!newState); // Revert if it fails
+      console.error("Failed to update status");
+      alert("Failed to update status. Please try again.");
+    } finally {
+      setIsToggling(false);
+    }
+  };
 
   const fetchAllReports = async () => {
     setLoading(true);
@@ -205,6 +227,15 @@ export default function Dashboard() {
           >
             <Flame className="mr-2 h-4 w-4" /> {showHeatmap ? "Hide Analytics Heatmap" : "View Analytics Heatmap"}
           </Button>
+          <Button 
+              variant={isAccepting ? "default" : "destructive"} 
+              onClick={handleToggleStatus}
+              disabled={isToggling}
+              className={`flex-1 ${isAccepting ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+            >
+              {isToggling ? <Loader2 className="animate-spin h-4 w-4" /> : <Power className="mr-2 h-4 w-4" />} 
+              {isAccepting ? "Accepting" : "On Break"}
+            </Button>
           </div>
           <div>
             <div className="flex justify-between mb-2">

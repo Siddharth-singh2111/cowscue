@@ -24,7 +24,7 @@ const Navbar = () => {
             <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               <div className="relative w-10 h-10 flex items-center justify-center bg-white rounded-xl overflow-hidden p-1">
                 <Image 
-                  src="/image.png" 
+                  src="/image.png"
                   alt="Cowscue Logo" 
                   fill
                   className="object-contain"
