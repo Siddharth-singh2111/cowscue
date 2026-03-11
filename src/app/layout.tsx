@@ -4,7 +4,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from '@clerk/nextjs'
 import Navbar from "@/components/Navbar"; 
-import Footer from "@/components/Footer"; // 🟢 1. Import the Footer
+import Footer from "@/components/Footer"; 
+import Chatbot from "@/components/Chatbot";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -32,6 +33,7 @@ export default function RootLayout({
 
           {/* 🟢 2. THE NEW FOOTER */}
           <Footer />
+          <Chatbot/>
         </body>
       </html>
     </ClerkProvider>
