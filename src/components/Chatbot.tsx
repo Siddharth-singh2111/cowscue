@@ -31,7 +31,6 @@ export default function Chatbot() {
         const userMessage = input.trim();
         setInput("");
 
-        // Add user message to UI
         const newMessages: Message[] = [...messages, { role: "user", content: userMessage }];
         setMessages(newMessages);
         setIsLoading(true);
@@ -42,7 +41,7 @@ export default function Chatbot() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     message: userMessage,
-                    history: messages.slice(1) // 🟢 Skips the initial "model" greeting!
+                    history: messages.slice(1)
                 }),
             });
 
@@ -50,7 +49,7 @@ export default function Chatbot() {
 
             const data = await res.json();
 
-            // Add AI response to UI
+          
             setMessages((prev) => [...prev, { role: "model", content: data.reply }]);
         } catch (error) {
             setMessages((prev) => [...prev, { role: "model", content: "Sorry, I'm having trouble connecting right now." }]);
