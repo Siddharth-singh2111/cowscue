@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useEffect, useState,useRef } from "react";
+import { Card, CardContent, CardHeader,CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Power,Flame, MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle } from "lucide-react";
+import { Power,Flame,Upload,X ,MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle } from "lucide-react";
 import { pusherClient } from "@/lib/pusher";
 
 const RescueMap = dynamic(() => import("@/components/Map"), {
@@ -41,13 +41,19 @@ export default function Dashboard() {
   const initialStatus = user?.publicMetadata?.isAcceptingRescues !== false;
   const [isAccepting, setIsAccepting] = useState(initialStatus);
   const [isToggling, setIsToggling] = useState(false);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolveFile, setResolveFile] = useState<File | null>(null);
+  const [resolvePreview, setResolvePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ROUTING STATE
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
   const [isRouting, setIsRouting] = useState(false);
 
- 
+ const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 
 
 
@@ -95,6 +101,46 @@ export default function Dashboard() {
       alert("Failed to update status. Please try again.");
     } finally {
       setIsToggling(false);
+    }
+  };
+  const submitResolution = async () => {
+    if (!resolveFile || !resolvingId) {
+      // 🟢 Changed to alert
+      return alert("Photo Required: Please upload proof of the rescue.");
+    }
+    setIsUploading(true);
+    try {
+      // 1. Upload to Cloudinary
+      const formData = new FormData();
+      formData.append("file", resolveFile);
+      formData.append("upload_preset", UPLOAD_PRESET!);
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: formData });
+      const uploadData = await uploadRes.json();
+      const resolvedImageUrl = uploadData.secure_url;
+
+      // 2. Update Database
+      const res = await fetch(`/api/reports/${resolvingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "resolved", resolvedImageUrl }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setReports((prev) => prev.map((r) => r._id === resolvingId ? data.report : r));
+        
+        // 🟢 Changed to alert
+        alert("Rescue Complete! The citizen has been notified.");
+        
+        setResolvingId(null);
+        setResolveFile(null);
+        setResolvePreview(null);
+      }
+    } catch (e) {
+      // 🟢 Changed to alert
+      alert("Error: Failed to upload photo.");
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -379,7 +425,7 @@ export default function Dashboard() {
                       {report.status === 'pending' ? (
                         <Button size="sm" className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => handleStatusChange(report._id, "assigned")}>Accept</Button>
                       ) : (
-                        <Button size="sm" className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => handleStatusChange(report._id, "resolved")}>Mark Safe</Button>
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => setResolvingId(report._id)}>Mark Safe</Button>
                       )}
                     </div>
                   </div>
@@ -413,6 +459,45 @@ export default function Dashboard() {
         </div>
 
       </div>
+      {resolvingId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 border-0">
+            <CardHeader className="bg-green-600 text-white rounded-t-xl pb-4">
+              <CardTitle className="text-xl">Upload Rescue Proof</CardTitle>
+              <p className="text-sm text-green-100 mt-1">Show the citizen that the animal is safe.</p>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              {!resolvePreview ? (
+                <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-slate-300 rounded-xl h-48 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors">
+                  <Upload className="h-8 w-8 text-slate-400 mb-2" />
+                  <span className="text-sm text-slate-500 font-medium">Tap to upload "After" photo</span>
+                </div>
+              ) : (
+                <div className="relative h-48 w-full rounded-xl overflow-hidden group border border-slate-200">
+                  <img src={resolvePreview} alt="Preview" className="w-full h-full object-cover" />
+                  <button onClick={() => { setResolveFile(null); setResolvePreview(null); }} className="absolute top-2 right-2 bg-black/50 text-white p-1.5 rounded-full hover:bg-black/70">
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+              <input 
+                ref={fileInputRef} type="file" accept="image/*" className="hidden" 
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) { setResolveFile(file); setResolvePreview(URL.createObjectURL(file)); }
+                }} 
+              />
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setResolvingId(null); setResolveFile(null); setResolvePreview(null); }}>Cancel</Button>
+                <Button className="flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={submitResolution} disabled={isUploading}>
+                  {isUploading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />} 
+                  Complete Rescue
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

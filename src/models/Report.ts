@@ -11,6 +11,7 @@ export interface IReport extends Document {
   status: "pending" | "assigned" | "resolved";
   severity: "CRITICAL" | "MODERATE" | "ROUTINE";
   injuryType: string;
+  resolvedImageUrl?:string;
   location: {
     type: "Point";
     coordinates: number[]; 
@@ -25,6 +26,7 @@ const ReportSchema: Schema = new Schema(
     reporterPhone: { type: String, required: true },
     reporterHistory: { type: Number, default: 0 },
     imageUrl: { type: String, required: true },
+    resolvedImageUrl: { type: String},
     description: { type: String, required: true },
     status: {
       type: String,

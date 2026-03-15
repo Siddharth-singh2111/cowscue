@@ -12,6 +12,7 @@ interface Report {
   imageUrl: string;
   description: string;
   status: string;
+  resolvedImageUrl?:string;
   createdAt: string;
 }
 
@@ -127,13 +128,24 @@ export default function MyReports() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {reports.map((report) => (
             <Card key={report._id} className="hover:shadow-md transition-shadow border-slate-200">
-              <div className="relative h-48 w-full">
-                <img
-                  src={report.imageUrl}
-                  alt="Reported Cow"
-                  className="w-full h-full object-cover rounded-t-xl"
-                />
-                <div className={`absolute top-2 right-2 px-3 py-1 rounded-full text-xs font-bold uppercase border ${getStatusColor(report.status)} shadow-sm transition-colors duration-500`}>
+              <div className="relative h-48 w-full flex bg-slate-100">
+                {report.status === 'resolved' && report.resolvedImageUrl ? (
+                 
+                  <>
+                    <div className="w-1/2 relative border-r-[1px] border-white">
+                      <img src={report.imageUrl} alt="Before" className="w-full h-full object-cover rounded-tl-xl grayscale opacity-70" />
+                      <span className="absolute bottom-2 left-2 bg-black/60 text-white text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded backdrop-blur-sm">Before</span>
+                    </div>
+                    <div className="w-1/2 relative">
+                      <img src={report.resolvedImageUrl} alt="After" className="w-full h-full object-cover rounded-tr-xl" />
+                      <span className="absolute bottom-2 right-2 bg-green-500 text-white text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded shadow-sm">Safe</span>
+                    </div>
+                  </>
+                ) : (
+                  <img src={report.imageUrl} alt="Reported Cow" className="w-full h-full object-cover rounded-t-xl" />
+                )}
+                
+                <div className={`absolute top-2 right-2 px-3 py-1 rounded-full text-xs font-bold uppercase border ${getStatusColor(report.status)} shadow-sm transition-colors duration-500 backdrop-blur-md`}>
                   {report.status}
                 </div>
               </div>

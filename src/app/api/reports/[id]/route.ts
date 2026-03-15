@@ -9,12 +9,15 @@ export async function PATCH(
   props: { params: Promise<{ id: string }> }
 ) {
   const params = await props.params;
-
+// ✅ Read the body once and extract everything:
+const body = await req.json();
+const status = body.status;
+const resolvedImageUrl = body.resolvedImageUrl;
   try {
     const user = await currentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { status } = await req.json(); 
+    
     
     await connectDB();
 
@@ -43,9 +46,10 @@ export async function PATCH(
 
     // SCENARIO 2: Marking as Resolved 
     if (status === 'resolved') {
+     
        const updatedReport = await Report.findOneAndUpdate(
         { _id: params.id }, 
-        { status: 'resolved' },
+        { status: 'resolved',resolvedImageUrl },
         { new: true }
       );
 
