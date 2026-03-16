@@ -36,15 +36,12 @@ const resolvedImageUrl = body.resolvedImageUrl;
         );
       }
       
-      // 🟢 Trigger Real-Time Status Update for Web Dashboard & WhatsApp Bot
       try {
         await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
       } catch (e) { console.error("Pusher error:", e); }
 
       return NextResponse.json({ report: updatedReport }, { status: 200 });
     }
-
-    // SCENARIO 2: Marking as Resolved 
     if (status === 'resolved') {
      
        const updatedReport = await Report.findOneAndUpdate(
@@ -57,7 +54,7 @@ const resolvedImageUrl = body.resolvedImageUrl;
         return NextResponse.json({ error: "Report not found." }, { status: 404 });
       }
 
-      // 🟢 Trigger Real-Time Status Update for Web Dashboard & WhatsApp Bot
+     
       try {
         await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
       } catch (e) { console.error("Pusher error:", e); }
