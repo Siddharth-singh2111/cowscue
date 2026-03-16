@@ -15,7 +15,7 @@ export default function Home() {
         <div className="absolute inset-0 z-0">
           <Image 
             src="/image.png" 
-            alt="Cow on street" 
+            alt="" 
             fill
             className="object-cover"
             priority
