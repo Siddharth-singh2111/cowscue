@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, MapPin, Upload, X,MessageCircle, CheckCircle2, IndianRupee, Fuel } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Loader2, MapPin, Upload, X, Camera, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 export default function ReportPage() {
@@ -19,7 +19,6 @@ export default function ReportPage() {
   const [locationStatus, setLocationStatus] = useState<"idle" | "locating" | "found" | "error">("idle");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Environment variables
   const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 
@@ -60,7 +59,6 @@ export default function ReportPage() {
       setLocationStatus("found");
       const { latitude, longitude } = position.coords;
 
-      // 2. Upload to Cloudinary
       const formData = new FormData();
       formData.append("file", imageFile);
       formData.append("upload_preset", UPLOAD_PRESET!);
@@ -74,8 +72,6 @@ export default function ReportPage() {
       const uploadData = await uploadRes.json();
       const imageUrl = uploadData.secure_url;
 
-      // 3. Submit Report
-      // 3. Submit Report
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,38 +102,61 @@ export default function ReportPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
-      <Card className="w-full max-w-lg shadow-xl border-0">
-        <CardHeader className="bg-orange-600 text-white rounded-t-xl p-6">
-          <CardTitle className="text-2xl flex items-center gap-2">
-            🚨 Report Stray Cattle
-          </CardTitle>
-          <p className="text-orange-100 text-sm">Help us locate and rescue.</p>
-        </CardHeader>
+    <div className="min-h-screen pt-28 md:pt-36 pb-24 px-4 sm:px-6 relative overflow-hidden bg-slate-50 flex items-start justify-center">
+      
+      {/* Ambient Background Blurs */}
+      <div className="absolute top-20 left-0 w-[400px] h-[400px] bg-orange-400/10 blur-[100px] rounded-full pointer-events-none"></div>
+      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-amber-400/10 blur-[100px] rounded-full pointer-events-none"></div>
 
-        <CardContent className="p-6 space-y-6">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label className="text-slate-600 font-semibold">1. Photo Evidence</Label>
+      <Card className="w-full max-w-xl shadow-2xl shadow-slate-200/50 rounded-[2.5rem] border border-white bg-white/90 backdrop-blur-xl relative z-10 overflow-hidden">
+        
+        {/* Dynamic Top Header */}
+        <div className="bg-gradient-to-br from-orange-500 to-amber-500 p-8 sm:p-10 text-center relative overflow-hidden">
+          <div className="absolute -right-10 -top-10 w-32 h-32 bg-white/20 blur-2xl rounded-full"></div>
+          <div className="absolute -left-10 -bottom-10 w-32 h-32 bg-orange-600/40 blur-2xl rounded-full"></div>
+          
+          <div className="bg-white/20 p-3 rounded-2xl w-fit mx-auto mb-4 backdrop-blur-sm border border-white/30 shadow-inner">
+            <Camera size={32} className="text-white" />
+          </div>
+          <h2 className="text-3xl font-extrabold text-white tracking-tight drop-shadow-md">Report Emergency</h2>
+          <p className="text-orange-50 font-medium mt-2 text-sm max-w-xs mx-auto">
+            Our AI will verify the image and dispatch the nearest NGO immediately.
+          </p>
+        </div>
+
+        <CardContent className="p-6 sm:p-10">
+          <form onSubmit={handleSubmit} className="space-y-8">
+            
+            {/* 1. PHOTO EVIDENCE */}
+            <div className="space-y-3">
+              <Label className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-orange-500"></span> Step 1: Photo Evidence
+              </Label>
 
               {!previewUrl ? (
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-slate-300 rounded-xl h-48 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors"
+                  className="border-2 border-dashed border-slate-300 bg-slate-50/50 rounded-[1.5rem] h-56 flex flex-col items-center justify-center cursor-pointer hover:bg-orange-50 hover:border-orange-300 transition-all group shadow-inner"
                 >
-                  <Upload className="h-8 w-8 text-slate-400 mb-2" />
-                  <span className="text-sm text-slate-500">Tap to upload photo</span>
+                  <div className="bg-white p-4 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform duration-300">
+                    <Upload className="h-6 w-6 text-orange-500" />
+                  </div>
+                  <span className="text-sm text-slate-600 font-bold">Tap to upload a clear photo</span>
+                  <span className="text-xs text-slate-400 mt-1">AI will verify cattle presence</span>
                 </div>
               ) : (
-                <div className="relative h-64 w-full rounded-xl overflow-hidden group">
-                  <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                <div className="relative h-64 w-full rounded-[1.5rem] overflow-hidden group shadow-inner border-4 border-slate-100">
+                  <img src={previewUrl} alt="Preview" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                   <button
                     type="button"
                     onClick={clearImage}
-                    className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70"
+                    className="absolute top-4 right-4 bg-slate-900/60 backdrop-blur-md text-white p-2 rounded-full hover:bg-slate-900 transition-colors shadow-lg"
                   >
-                    <X size={20} />
+                    <X size={16} />
                   </button>
+                  <div className="absolute bottom-4 left-4 bg-emerald-500/90 backdrop-blur-md text-white px-3 py-1 text-xs font-bold rounded-full shadow-lg border border-white/20">
+                    Photo Attached ✓
+                  </div>
                 </div>
               )}
 
@@ -149,50 +168,71 @@ export default function ReportPage() {
                 onChange={handleFileChange}
               />
             </div>
-                <div className="space-y-2">
-              <Label htmlFor="phone" className="text-slate-600 font-semibold">2. Your Contact Number</Label>
+
+            {/* 2. CONTACT NUMBER */}
+            <div className="space-y-3">
+              <Label htmlFor="phone" className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                 <span className="w-2 h-2 rounded-full bg-orange-500"></span> Step 2: Contact Number
+              </Label>
               <Input
                 id="phone"
                 type="tel"
-                placeholder="e.g., +91 9876543210"
+                placeholder="+91 9876543210"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 required
+                className="h-14 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-orange-500 focus-visible:border-orange-500 text-lg px-4 shadow-inner"
               />
-              <p className="text-xs text-slate-400">So the rescue driver can call you for exact directions.</p>
+              <p className="text-xs text-slate-400 font-medium ml-1">So the rescue driver can call you for exact directions.</p>
             </div>
-            {/* Description */}
-            <div className="space-y-2">
-              <Label htmlFor="desc" className="text-slate-600 font-semibold">3. Situation Details</Label>
+
+            {/* 3. SITUATION DETAILS */}
+            <div className="space-y-3">
+              <Label htmlFor="desc" className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                 <span className="w-2 h-2 rounded-full bg-orange-500"></span> Step 3: Situation Details
+              </Label>
               <Textarea
                 id="desc"
-                placeholder="E.g., Male calf with leg injury near the main market..."
-                className="resize-none h-24 text-base"
+                placeholder="E.g., Male calf with leg injury near the main market crossing..."
+                className="resize-none h-28 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-orange-500 focus-visible:border-orange-500 text-base p-4 shadow-inner"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
 
-            {/* Location Indicator (Visual only) */}
-            <div className="bg-blue-50 text-blue-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2">
-              <MapPin size={16} />
-              {locationStatus === "idle" && "Location will be captured on submit"}
-              {locationStatus === "locating" && "Acquiring GPS coordinates..."}
-              {locationStatus === "found" && "GPS Location Locked ✅"}
-              {locationStatus === "error" && "Could not fetch location ❌"}
+            {/* GPS LOCATION INDICATOR */}
+            <div className={`p-4 rounded-2xl text-sm font-bold flex items-center gap-3 transition-colors duration-500 ${
+              locationStatus === 'found' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+              locationStatus === 'error' ? 'bg-red-50 text-red-700 border border-red-200' :
+              locationStatus === 'locating' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+              'bg-blue-50 text-blue-700 border border-blue-200'
+            }`}>
+              {locationStatus === 'found' ? <CheckCircle2 size={20} className="text-emerald-500" /> :
+               locationStatus === 'error' ? <AlertTriangle size={20} className="text-red-500" /> :
+               locationStatus === 'locating' ? <Loader2 size={20} className="text-amber-500 animate-spin" /> :
+               <MapPin size={20} className="text-blue-500" />}
+              
+              <span className="flex-1">
+                {locationStatus === "idle" && "GPS Location will be captured on submit"}
+                {locationStatus === "locating" && "Acquiring highly accurate GPS coordinates..."}
+                {locationStatus === "found" && "GPS Location Locked & Verified"}
+                {locationStatus === "error" && "Could not fetch location. Check browser permissions."}
+              </span>
             </div>
 
+            {/* SUBMIT BUTTON */}
             <Button
               type="submit"
-              className="w-full bg-orange-600 hover:bg-orange-700 text-lg py-6"
+              className="w-full h-16 text-lg font-extrabold rounded-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white shadow-xl shadow-orange-500/30 border-0 transition-transform hover:-translate-y-1 active:translate-y-0"
               disabled={loading}
             >
               {loading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+                <><Loader2 className="mr-3 h-6 w-6 animate-spin" /> Transmitting to AI Server...</>
               ) : (
                 "Submit Rescue Request"
               )}
             </Button>
+
           </form>
         </CardContent>
       </Card>
