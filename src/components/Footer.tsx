@@ -80,7 +80,7 @@ const Footer = () => {
                       <Phone size={18} className="text-orange-400" />
                     </div>
                     <div>
-                      <p className="text-white font-medium text-sm">+91 1800-COW-SAVE</p>
+                      <p className="text-white font-medium text-sm">+91 9999999999</p>
                       <p className="text-xs text-slate-500 mt-0.5">Toll-Free, 24/7 Dispatch</p>
                     </div>
                   </li>

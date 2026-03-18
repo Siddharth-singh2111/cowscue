@@ -33,7 +33,7 @@ export default function Home() {
 
             <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-medium backdrop-blur-md">
               <span className="flex h-2.5 w-2.5 rounded-full bg-green-400 mr-3 animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]"></span>
-              Active in Sri City, Andhra Pradesh
+              Active in India
             </div>
             
             <h1 className="text-4xl sm:text-5xl md:text-7xl font-extrabold text-white tracking-tight leading-[1.1] max-w-4xl mx-auto drop-shadow-lg">
