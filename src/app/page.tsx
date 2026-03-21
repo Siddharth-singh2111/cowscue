@@ -13,13 +13,7 @@ export default function Home() {
       <section className="relative min-h-[90vh] flex items-center justify-center pt-24 pb-12 px-4 sm:px-6 overflow-hidden">
         {/* Full Bleed Background Image with Dark Overlay */}
         <div className="absolute inset-0 z-0">
-          <Image 
-            src="/image.png" 
-            alt="" 
-            fill
-            className="object-cover"
-            priority
-          />
+          
           <div className="absolute inset-0 bg-slate-950/70 mix-blend-multiply"></div>
           <div className="absolute inset-0 bg-gradient-to-t from-slate-50 via-transparent to-transparent"></div>
         </div>

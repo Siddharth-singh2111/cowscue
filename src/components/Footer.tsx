@@ -21,7 +21,7 @@ const Footer = () => {
               <Link href="/" className="flex items-center gap-3 group w-fit">
                 <div className="relative w-12 h-12 flex items-center justify-center bg-white rounded-2xl p-1.5 shadow-[0_0_20px_rgba(249,115,22,0.15)] group-hover:scale-105 transition-transform duration-300">
                   <Image 
-                    src="/favicon.ico"
+                    src="/1.png"
                     alt="Cowscue Logo" 
                     fill
                     className="object-contain p-1"

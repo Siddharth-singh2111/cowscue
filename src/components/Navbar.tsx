@@ -25,7 +25,7 @@ const Navbar = () => {
             <Link href="/" className="flex items-center gap-3 group">
               <div className="relative w-10 h-10 flex items-center justify-center bg-gradient-to-br from-orange-100 to-orange-50 rounded-full border border-orange-200/50 shadow-inner overflow-hidden group-hover:scale-105 transition-transform duration-300">
                 <Image 
-                  src="/favicon.ico"
+                  src="/1.png"
                   alt="Cowscue Logo" 
                   fill
                   className="object-contain p-1.5 drop-shadow-sm"
