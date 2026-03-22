@@ -27,7 +27,7 @@ export default function Home() {
 
             <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-medium backdrop-blur-md">
               <span className="flex h-2.5 w-2.5 rounded-full bg-green-400 mr-3 animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]"></span>
-              Active in India
+              Active 
             </div>
             
             <h1 className="text-4xl sm:text-5xl md:text-7xl font-extrabold text-white tracking-tight leading-[1.1] max-w-4xl mx-auto drop-shadow-lg">
@@ -36,7 +36,7 @@ export default function Home() {
             </h1>
             
             <p className="text-lg md:text-xl text-slate-200 leading-relaxed max-w-2xl mx-auto font-medium">
-              Thousands of stray cattle suffer on our streets. Snap a picture, drop a pin, and our AI instantly dispatches the nearest verified Gaushala.
+              Thousands of stray cattle suffer on our streets. Click a picture, drop a pin, and our AI instantly dispatches the nearest verified Gaushala.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4 relative z-20">
