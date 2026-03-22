@@ -8,6 +8,9 @@ export interface IReport extends Document {
   reporterHistory: number; 
   imageUrl: string;  
   description: string;
+  ngoName?: string;
+  driverName?: string;
+  driverPhone?: string;
   status: "pending" | "assigned" | "resolved";
   severity: "CRITICAL" | "MODERATE" | "ROUTINE";
   injuryType: string;
@@ -26,6 +29,9 @@ const ReportSchema: Schema = new Schema(
     reporterPhone: { type: String, required: true },
     reporterHistory: { type: Number, default: 0 },
     imageUrl: { type: String, required: true },
+    ngoName: { type: String },
+  driverName: { type: String },
+  driverPhone: { type: String },
     resolvedImageUrl: { type: String},
     description: { type: String, required: true },
     status: {

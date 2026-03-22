@@ -46,6 +46,9 @@ export default function Dashboard() {
   const [resolvePreview, setResolvePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dispatchingId, setDispatchingId] = useState<string | null>(null);
+  const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
 
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
@@ -153,15 +156,21 @@ export default function Dashboard() {
 
   const handleStatusChange = async (reportId: string, newStatus: string) => {
     try {
+      const ngoName = user?.firstName || "Suraksha Rescue Team";
       const res = await fetch(`/api/reports/${reportId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus,ngoName: newStatus === 'assigned' ? ngoName : undefined,
+          driverName: newStatus === 'assigned' ? driverName : undefined,
+          driverPhone: newStatus === 'assigned' ? driverPhone : undefined }),
       });
       if (res.status === 409) return alert("Too late! Another NGO just accepted this case.");
       if (res.ok) {
         const data = await res.json();
         setReports((prev) => prev.map((r) => r._id === reportId ? data.report : r));
+        setDispatchingId(null);
+        setDriverName("");
+        setDriverPhone("");
       }
     } catch (error) { console.error("Update failed", error); }
   };
@@ -466,7 +475,51 @@ export default function Dashboard() {
 
         </div>
       </div>
-
+      {/* 🟢 NEW: DISPATCH DRIVER MODAL */}
+      {dispatchingId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 rounded-[2rem] border-0 overflow-hidden">
+            <CardHeader className="bg-slate-900 text-white p-6">
+              <CardTitle className="text-2xl font-extrabold flex items-center gap-2">
+                🚑 Dispatch Rescue
+              </CardTitle>
+              <p className="text-sm text-slate-400 mt-1 font-medium">Let the citizen know who is coming.</p>
+            </CardHeader>
+            <CardContent className="p-6 sm:p-8 space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Driver Name</label>
+                <input 
+                  type="text" 
+                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
+                  placeholder="e.g. Ramesh Kumar"
+                  value={driverName}
+                  onChange={(e) => setDriverName(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Driver Phone (For Live Location)</label>
+                <input 
+                  type="tel" 
+                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
+                  placeholder="e.g. 9876543210"
+                  value={driverPhone}
+                  onChange={(e) => setDriverPhone(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-3 pt-4">
+                <Button variant="outline" className="flex-1 rounded-full h-12 font-bold" onClick={() => setDispatchingId(null)}>Cancel</Button>
+                <Button 
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white rounded-full h-12 font-bold" 
+                  onClick={() => handleStatusChange(dispatchingId, "assigned")}
+                  disabled={!driverName || !driverPhone}
+                >
+                  Send Ambulance
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       {/* RESOLUTION MODAL */}
       {resolvingId && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">

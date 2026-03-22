@@ -23,9 +23,10 @@ const resolvedImageUrl = body.resolvedImageUrl;
 
     // SCENARIO 1: NGO Trying to Accept a Case
     if (status === 'assigned') {
+      const { ngoName, driverName, driverPhone } = body;
       const updatedReport = await Report.findOneAndUpdate(
         { _id: params.id, status: 'pending' }, 
-        { status: 'assigned' },
+        { status: 'assigned',ngoName,driverName,driverPhone },
         { new: true }
       );
 
