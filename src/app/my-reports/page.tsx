@@ -187,7 +187,7 @@ export default function MyReports() {
                   </div>
 
                   <CardTitle className="text-lg font-bold text-slate-800 mb-6 leading-relaxed line-clamp-3">
-                    {report.description}
+                    {report.description}  
                   </CardTitle>
 
                   <div className="mt-auto pt-6 border-t border-slate-100 flex items-center gap-3">
