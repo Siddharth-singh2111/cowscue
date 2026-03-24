@@ -40,6 +40,11 @@ const Navbar = () => {
 
           {/* RIGHT: Navigation & Auth */}
           <div className="flex items-center gap-1 sm:gap-2">
+            <Link href="/apply" className="hidden sm:block mr-1">
+              <Button variant="ghost" className="rounded-full text-slate-500 hover:text-orange-600 hover:bg-orange-50 font-bold text-xs uppercase tracking-wider h-9 transition-colors">
+                Partner NGO
+              </Button>
+            </Link>
             <SignedIn>
               {isAdmin ? (
                 /* --- NGO ADMIN VIEW --- */

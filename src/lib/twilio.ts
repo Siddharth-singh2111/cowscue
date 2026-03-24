@@ -21,7 +21,7 @@ export async function sendWhatsAppAlert(description: string, lat: number, lng: n
   }
 
   // Generate a Google Maps deep link for the exact location
-  const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  const mapsLink = `https://maps.google.com/?q=${lat},${lng}`;
   
   // Format the message nicely with emojis
   const message = `🚨 *Cowscue Emergency Alert* 🚨\n\n*Situation:* ${description}\n\n📍 *Location:* ${mapsLink}\n\nPlease check the Suraksha Command Center to accept this rescue mission.`;

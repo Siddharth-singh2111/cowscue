@@ -54,7 +54,8 @@ const Footer = () => {
                     { name: 'Home', path: '/' },
                     { name: 'Report Emergency', path: '/report' },
                     { name: 'My Impact', path: '/my-reports' },
-                    { name: 'NGO Command Center', path: '/dashboard' }
+                    { name: 'NGO Command Center', path: '/dashboard' },
+                    { name: 'Register as NGO', path: '/apply' }
                   ].map((link) => (
                     <li key={link.name}>
                       <Link 
