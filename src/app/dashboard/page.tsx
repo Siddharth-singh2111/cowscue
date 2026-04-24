@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Power, Flame, Upload, X, MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle, Activity, ShieldCheck } from "lucide-react";
@@ -38,8 +39,7 @@ export default function Dashboard() {
   const [radius, setRadius] = useState([15]);
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(false);
-  const initialStatus = user?.publicMetadata?.isAcceptingRescues !== false;
-  const [isAccepting, setIsAccepting] = useState(initialStatus);
+  const [isAccepting, setIsAccepting] = useState(true);
   const [isToggling, setIsToggling] = useState(false);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [resolveFile, setResolveFile] = useState<File | null>(null);
@@ -63,6 +63,9 @@ export default function Dashboard() {
       if (!user || role !== "ngo") {
         router.push("/");
       } else {
+        // Sync accepting status from Clerk metadata
+        setIsAccepting(user.publicMetadata?.isAcceptingRescues !== false);
+
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -96,7 +99,7 @@ export default function Dashboard() {
     } catch (error) {
       setIsAccepting(!newState);
       console.error("Failed to update status");
-      alert("Failed to update status. Please try again.");
+      toast.error("Failed to update status. Please try again.");
     } finally {
       setIsToggling(false);
     }
@@ -104,7 +107,7 @@ export default function Dashboard() {
 
   const submitResolution = async () => {
     if (!resolveFile || !resolvingId) {
-      return alert("Photo Required: Please upload proof of the rescue.");
+      return toast.warning("Photo Required: Please upload proof of the rescue.");
     }
     setIsUploading(true);
     try {
@@ -124,13 +127,13 @@ export default function Dashboard() {
       if (res.ok) {
         const data = await res.json();
         setReports((prev) => prev.map((r) => r._id === resolvingId ? data.report : r));
-        alert("Rescue Complete! The citizen has been notified.");
+        toast.success("Rescue Complete! The citizen has been notified.");
         setResolvingId(null);
         setResolveFile(null);
         setResolvePreview(null);
       }
     } catch (e) {
-      alert("Error: Failed to upload photo.");
+      toast.error("Failed to upload photo.");
     } finally {
       setIsUploading(false);
     }
@@ -164,7 +167,7 @@ export default function Dashboard() {
           driverName: newStatus === 'assigned' ? driverName : undefined,
           driverPhone: newStatus === 'assigned' ? driverPhone : undefined }),
       });
-      if (res.status === 409) return alert("Too late! Another NGO just accepted this case.");
+      if (res.status === 409) return toast.warning("Too late! Another NGO just accepted this case.");
       if (res.ok) {
         const data = await res.json();
         setReports((prev) => prev.map((r) => r._id === reportId ? data.report : r));
@@ -176,7 +179,7 @@ export default function Dashboard() {
   };
 
   const calculateOptimizedRoute = async () => {
-    if (!userLocation) return alert("Waiting for your GPS location...");
+    if (!userLocation) return toast.info("Waiting for your GPS location...");
     setIsRouting(true);
     try {
       const selectedCows = reports.filter(r => selectedReports.has(r._id));
@@ -192,11 +195,11 @@ export default function Dashboard() {
         setOptimizedRoute(data.trips[0].geometry);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        alert("Routing failed. Some locations might not be reachable by road.");
+        toast.error("Routing failed. Some locations might not be reachable by road.");
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to calculate route.");
+      toast.error("Failed to calculate route.");
     } finally {
       setIsRouting(false);
     }
@@ -546,7 +549,12 @@ export default function Dashboard() {
                 ref={fileInputRef} type="file" accept="image/*" className="hidden" 
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file) { setResolveFile(file); setResolvePreview(URL.createObjectURL(file)); }
+                  if (file) {
+                    // Revoke previous object URL to prevent memory leak
+                    if (resolvePreview) URL.revokeObjectURL(resolvePreview);
+                    setResolveFile(file);
+                    setResolvePreview(URL.createObjectURL(file));
+                  }
                 }} 
               />
               <div className="flex gap-3 pt-2">

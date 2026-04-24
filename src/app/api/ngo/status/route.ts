@@ -1,17 +1,22 @@
 // src/app/api/ngo/status/route.ts
 import { NextResponse } from "next/server";
-import { currentUser, clerkClient } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/nextjs/server";
+import { requireAuth, isAuthError } from "@/lib/auth";
+import { ngoStatusSchema } from "@/lib/validations";
 
 export async function PATCH(req: Request) {
   try {
-    const user = await currentUser();
-    
-    if (!user || user.publicMetadata?.role !== "ngo") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requireAuth("ngo");
+    if (isAuthError(auth)) return auth;
+    const { user } = auth;
+
+    const body = await req.json();
+    const parsed = ngoStatusSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    const { isAccepting } = await req.json();
-
+    const { isAccepting } = parsed.data;
 
     const client = await clerkClient();
     await client.users.updateUserMetadata(user.id, {

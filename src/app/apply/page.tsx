@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,7 +31,7 @@ export default function NgoApplyPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return alert("Please sign in to apply.");
+    if (!user) return toast.warning("Please sign in to apply.");
 
     setLoading(true);
     try {
@@ -43,7 +44,7 @@ export default function NgoApplyPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        alert(`⚠️ ${data.error}`);
+        toast.error(data.error);
         setLoading(false);
         return;
       }
@@ -51,7 +52,7 @@ export default function NgoApplyPage() {
       setSuccess(true);
     } catch (error) {
       console.error(error);
-      alert("⚠️ Something went wrong. Please try again.");
+      toast.error("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }

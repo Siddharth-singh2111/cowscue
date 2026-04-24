@@ -1,35 +1,39 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Report from "@/models/Report";
-import { currentUser } from "@clerk/nextjs/server";
+import { requireAuth, isAuthError } from "@/lib/auth";
+import { nearbyQuerySchema } from "@/lib/validations";
 
 export async function GET(req: Request) {
   try {
-    const user = await currentUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requireAuth();
+    if (isAuthError(auth)) return auth;
 
-    // 1. Get Lat/Lng from URL Query Params
+    // Parse and validate query params with Zod (auto-coerces strings to numbers)
     const { searchParams } = new URL(req.url);
-    const lat = searchParams.get("lat");
-    const lng = searchParams.get("lng");
-    const radiusKm = searchParams.get("radius") || "10"; // Default 10km
+    const parsed = nearbyQuerySchema.safeParse({
+      lat: searchParams.get("lat"),
+      lng: searchParams.get("lng"),
+      radius: searchParams.get("radius"),
+    });
 
-    if (!lat || !lng) {
-      return NextResponse.json({ error: "Location required" }, { status: 400 });
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message || "Invalid query parameters";
+      return NextResponse.json({ error: firstError }, { status: 400 });
     }
+
+    const { lat, lng, radius } = parsed.data;
 
     await connectDB();
 
-    // 2. The MongoDB Geospatial Query
-    // $near requires a 2dsphere index (which we added in your Schema)
-   const reports = await Report.find({
+    const reports = await Report.find({
       location: {
         $near: {
           $geometry: {
             type: "Point",
             coordinates: [lng, lat],
           },
-          $maxDistance: parseInt(radiusKm) * 1000,
+          $maxDistance: radius * 1000,
         },
       },
     }).sort({ createdAt: -1 });

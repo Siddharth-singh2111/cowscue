@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -25,12 +26,16 @@ export default function ReportPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Revoke previous URL to prevent memory leak
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setImageFile(file);
       setPreviewUrl(URL.createObjectURL(file));
     }
   };
 
   const clearImage = () => {
+    // Revoke object URL to prevent memory leak
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setImageFile(null);
     setPreviewUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -39,7 +44,7 @@ export default function ReportPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!imageFile || !description) {
-      alert("Please provide an image and description.");
+      toast.warning("Please provide an image and description.");
       return;
     }
 
@@ -81,7 +86,7 @@ export default function ReportPage() {
       const responseData = await res.json();
 
       if (!res.ok) {
-        alert(`⚠️ ${responseData.error || "Failed to submit report"}`);
+        toast.error(responseData.error || "Failed to submit report");
         setLocationStatus("error");
         setLoading(false); 
         if (responseData.error?.includes("AI Verification Failed")) {
@@ -90,13 +95,13 @@ export default function ReportPage() {
         return;
       }
 
-      alert("Report submitted successfully!");
+      toast.success("Report submitted successfully!");
       router.push("/my-reports");
 
     } catch (error: any) {
       console.error(error);
       setLocationStatus("error");
-      alert(`⚠️ ${error.message || "Something went wrong"}`);
+      toast.error(error.message || "Something went wrong");
       setLoading(false);
     }
   };

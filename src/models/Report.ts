@@ -30,9 +30,9 @@ const ReportSchema: Schema = new Schema(
     reporterHistory: { type: Number, default: 0 },
     imageUrl: { type: String, required: true },
     ngoName: { type: String },
-  driverName: { type: String },
-  driverPhone: { type: String },
-    resolvedImageUrl: { type: String},
+    driverName: { type: String },
+    driverPhone: { type: String },
+    resolvedImageUrl: { type: String },
     description: { type: String, required: true },
     status: {
       type: String,

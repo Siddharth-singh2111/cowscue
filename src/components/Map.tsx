@@ -15,8 +15,15 @@ const icon = L.icon({
   popupAnchor: [1, -34],
 });
 
-// 🟢 Custom Component to inject the Heatmap into Leaflet
-function HeatmapLayer({ reports }: { reports: any[] }) {
+interface MapReport {
+  _id: string;
+  imageUrl: string;
+  description: string;
+  location: { coordinates: number[] };
+}
+
+// Custom Component to inject the Heatmap into Leaflet
+function HeatmapLayer({ reports }: { reports: MapReport[] }) {
   const map = useMap();
 
   useEffect(() => {
@@ -42,9 +49,9 @@ function HeatmapLayer({ reports }: { reports: any[] }) {
 }
 
 interface MapProps {
-  reports: any[]; 
-  optimizedRoute?: any;
-  showHeatmap?: boolean; // 🟢 New Prop
+  reports: MapReport[]; 
+  optimizedRoute?: GeoJSON.Geometry;
+  showHeatmap?: boolean;
 }
 
 export default function RescueMap({ reports, optimizedRoute, showHeatmap = false }: MapProps) {

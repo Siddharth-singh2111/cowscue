@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from '@clerk/nextjs'
+import { Toaster } from 'sonner'
 import Navbar from "@/components/Navbar"; 
 import Footer from "@/components/Footer"; 
 import Chatbot from "@/components/Chatbot";
@@ -34,6 +35,7 @@ export default function RootLayout({
           {/* 🟢 2. THE NEW FOOTER */}
           <Footer />
           <Chatbot/>
+          <Toaster richColors position="top-center" closeButton />
         </body>
       </html>
     </ClerkProvider>

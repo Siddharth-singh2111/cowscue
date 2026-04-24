@@ -1,5 +1,3 @@
-"use client";
-
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowRight, Camera, MapPin, ShieldCheck, HeartHandshake, Clock, Activity, Users } from "lucide-react";

@@ -1,67 +1,72 @@
 import { NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Report from "@/models/Report";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { runAITriage } from "@/lib/aiTriage";
+import { whatsappWebhookSchema } from "@/lib/validations";
 import { pusherServer } from "@/lib/pusher";
 import { sendWhatsAppAlert } from "@/lib/twilio";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 export async function POST(req: Request) {
   try {
     // 1. Secret Key Auth (Only our Node.js bot knows this password)
-    // 1. Secret Key Auth (Diagnostic Version)
     const authHeader = req.headers.get("authorization");
     const expectedToken = `Bearer ${process.env.BOT_SECRET_KEY}`;
 
     if (!authHeader || authHeader !== expectedToken) {
-      // 🟢 This will print a bright red error in your Vercel logs!
-      console.error(`🚨 AUTH MISMATCH! Received: [${authHeader}] | Expected: [${expectedToken}]`);
+      console.error(
+        `🚨 AUTH MISMATCH! Received: [${authHeader}] | Expected: [${expectedToken}]`
+      );
       return NextResponse.json({ error: "Unauthorized Bot" }, { status: 401 });
     }
 
-    const { base64Image, phone, latitude, longitude } = await req.json();
+    // 2. Validate input
+    const body = await req.json();
+    const parsed = whatsappWebhookSchema.safeParse(body);
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0]?.message || "Invalid input";
+      return NextResponse.json({ error: firstError }, { status: 400 });
+    }
 
-    // 2. Upload Base64 Image directly to Cloudinary via REST API
+    const { base64Image, phone, latitude, longitude } = parsed.data;
+
+    // 3. Upload Base64 Image to Cloudinary
     const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
     const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-    
+
     const formData = new FormData();
     formData.append("file", `data:image/jpeg;base64,${base64Image}`);
     formData.append("upload_preset", uploadPreset!);
 
-    const cloudRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-      method: "POST",
-      body: formData,
-    });
+    const cloudRes = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      { method: "POST", body: formData }
+    );
     const cloudData = await cloudRes.json();
     const imageUrl = cloudData.secure_url;
 
-    // 3. Gemini AI Verification
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const prompt = "Analyze this image. Is there a cow, calf, bull, or cattle clearly visible in it? Answer strictly with the word 'true' or 'false'.";
-    
-    const result = await model.generateContent([
-      prompt,
-      { inlineData: { data: base64Image, mimeType: "image/jpeg" } },
-    ]);
+    // 4. Gemini AI Verification + Triage (now uses shared utility)
+    const triage = await runAITriage(base64Image);
 
-    const aiText = result.response.text().trim().toLowerCase();
-    if (!aiText.includes("true")) {
+    if (!triage || !triage.isCow) {
       return NextResponse.json({ error: "No cattle detected by AI." }, { status: 400 });
     }
 
-    // 4. Save to Database
+    // 5. Save to Database
     await connectDB();
-    const pastReports = await Report.countDocuments({ reporterPhone: phone, status: 'resolved' });
+    const pastReports = await Report.countDocuments({
+      reporterPhone: phone,
+      status: "resolved",
+    });
 
     const newReport = await Report.create({
-      reporterId: `whatsapp-${phone}`, // Mark as WhatsApp user
-      reporterName: "WhatsApp Citizen", 
+      reporterId: `whatsapp-${phone}`,
+      reporterName: "WhatsApp Citizen",
       reporterPhone: phone,
       reporterHistory: pastReports,
       imageUrl,
       description: "🚨 Emergency reported automatically via WhatsApp Bot.",
+      severity: triage.severity,
+      injuryType: triage.injuryType,
       location: {
         type: "Point",
         coordinates: [longitude, latitude],
@@ -69,12 +74,18 @@ export async function POST(req: Request) {
       status: "pending",
     });
 
-    // 5. Trigger Real-Time Dashboard & Twilio Alerts
-    try { await pusherServer.trigger("cowscue-alerts", "new-report", newReport); } catch (e) {}
-    sendWhatsAppAlert(newReport.description, latitude, longitude);
+    // 6. Trigger Real-Time Dashboard & Twilio Alerts
+    try {
+      await pusherServer.trigger("cowscue-alerts", "new-report", newReport);
+    } catch (e) {
+      console.error("Pusher error:", e);
+    }
+
+    sendWhatsAppAlert(newReport.description, latitude, longitude).catch((err) =>
+      console.error("WhatsApp alert failed:", err)
+    );
 
     return NextResponse.json({ success: true, report: newReport }, { status: 201 });
-
   } catch (error) {
     console.error("Webhook Error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
