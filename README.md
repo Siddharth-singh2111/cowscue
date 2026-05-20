@@ -3,18 +3,18 @@
   # 🚑 Cowscue
   **A Real-Time, AI-Powered Logistical Dispatch Platform for Animal Rescue**
   
-  [![Next.js](https://img.shields.io/badge/Next.js-14+-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
+  [![Next.js](https://img.shields.io/badge/Next.js-16+-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
   [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org/)
   [![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-success?style=for-the-badge&logo=mongodb)](https://www.mongodb.com/)
   [![Gemini](https://img.shields.io/badge/AI_Medical_Triage-Gemini-orange?style=for-the-badge&logo=google)](https://ai.google.dev/)
-  [![Twilio](https://img.shields.io/badge/SMS_Alerts-Twilio-red?style=for-the-badge&logo=twilio)](https://www.twilio.com/)
+  [![Twilio](https://img.shields.io/badge/WhatsApp_API-Twilio-red?style=for-the-badge&logo=twilio)](https://www.twilio.com/)
 
   <p align="center">
     <a href="#the-problem">The Problem</a> •
     <a href="#key-features">Key Features</a> •
     <a href="#tech-stack">Tech Stack</a> •
     <a href="#getting-started">Getting Started</a> •
-    <a href="#future-roadmap">Future Roadmap</a>
+    <a href="#live-preview-visuals">Features Showcase</a>
   </p>
 </div>
 
@@ -30,35 +30,36 @@ Cowscue bridges the gap between citizens and NGOs. It is a rapid-response platfo
 
 ## ✨ Key Features
 
-* **🤖 AI Triage & Spam Prevention:** Integrates **Google Gemini 2.5 Flash** vision models to automatically reject non-cattle images. It also acts as a virtual veterinarian, diagnosing the severity of the injury (CRITICAL, MODERATE, ROUTINE) and extracting the injury type, pushing the most urgent cases to the top of the NGO queue.
-* **📍 Geospatial Querying:** Uses MongoDB `$near` operators and `2dsphere` indexing to ensure NGOs only see emergencies within their customizable operational radius (e.g., 15km).
-* **🏆 Gamified Leaderboard:** Dynamically calculates "Karma Points" for users based on successfully resolved rescues. A dedicated real-time leaderboard ranks top Samaritans with Gold, Silver, and Bronze badges to encourage continuous community engagement.
+* **🤖 AI Triage & Spam Prevention:** Integrates **Google Gemini 2.5 Flash** vision models to automatically reject non-cattle images. It acts as a virtual veterinarian, diagnosing the severity of the injury (`CRITICAL`, `MODERATE`, `ROUTINE`) and extracting details to push urgent cases to the top of the NGO queue.
+* **📍 Proximity Geofencing & Alert Routing:** Uses MongoDB `$near` operators, `2dsphere` indexing, and the **Haversine formula** to match emergency coordinates against NGO-customized operation boundaries. Reports are automatically dispatched only to NGOs within range.
 * **🗺️ Batch Route Optimization (TSP):** Implements the **Project OSRM API** to solve the Traveling Salesperson Problem. NGOs can select multiple pending rescues, and the dashboard generates the most fuel-efficient driving route.
-* **⚡ Real-Time Command Center:** Powered by **Pusher**, the NGO dashboard and user impact screens update instantly via WebSockets without requiring a page refresh.
-* **📱 WhatsApp Dispatch Alerts:** Integrates the **Twilio API** to instantly send SMS/WhatsApp alerts with Google Maps deep-links directly to the NGO driver's phone, along with a dedicated WhatsApp Bot for easy emergency reporting.
+* **⚡ Real-Time Command Center:** Powered by **Pusher**, the NGO dashboard, tracking screens, and live maps update instantly via WebSockets without requiring a page refresh.
+* **🚑 Live Driver Tracking Telemetry:** Drivers can broadcast their GPS location on the move, updating the citizen's live tracking interface with marker positions and route paths in real-time.
+* **📱 Twilio WhatsApp Integration:** Uses the official **Twilio WhatsApp API** to instantly dispatch alerts with Google Maps deep-links directly to the NGO driver's phone, combined with a WhatsApp Webhook receiver to handle citizen reporting.
+* **💝 Public Sponsorship Crowdfunding:** NGOs can activate public fundraising for any rescue case. Citizens tracking a case see a beautiful sponsorship panel with real-time goal metrics, interactive progress bars, popping donation feeds, and falling emoji confetti animations triggered on live donation events.
+* **⚙️ Self-Serve NGO Workspaces:** Features a comprehensive configuration modal enabling verified NGOs to customize their public profiles (name, phone, address, coordinates) and operating radius.
+* **🏆 Gamified Leaderboard:** Dynamically calculates "Karma Points" for citizens based on successful rescues, ranking top contributors with gold, silver, and bronze badges.
 
 ---
 
 ## 🛠️ Tech Stack
 
 **Frontend:**
-* [Next.js 14](https://nextjs.org/) (App Router)
+* [Next.js 16 (App Router)](https://nextjs.org/)
 * [React 19](https://react.dev/)
 * [Tailwind CSS](https://tailwindcss.com/) + [shadcn/ui](https://ui.shadcn.com/)
 * [React-Leaflet](https://react-leaflet.js.org/) (OpenStreetMap integration)
 
 **Backend & Database:**
 * Next.js Route Handlers (Serverless APIs)
-* Node.js & Express (WhatsApp Bot Microservice)
 * [MongoDB Atlas](https://www.mongodb.com/) (Mongoose ODM + Geospatial Indexing)
-* [Clerk](https://clerk.com/) (Authentication & RBAC)
+* [Clerk](https://clerk.com/) (Authentication & Role-Based Access Control)
 
 **Third-Party Integrations:**
 * **Google Gemini AI** (Vision-based spam detection and medical triage)
 * **Cloudinary** (Media storage and optimization)
 * **Pusher** (Real-time WebSocket events)
-* **whatsapp-web.js** (WhatsApp Bot client)
-* **Twilio** (WhatsApp Sandbox notifications)
+* **Twilio** (WhatsApp Gateway Sandbox)
 * **Project OSRM** (Trip API for routing algorithms)
 
 ---
@@ -70,17 +71,18 @@ Make sure you have Node.js (v18+) and npm/yarn/pnpm installed. You will also nee
 
 ### 1. Clone the repository
 ```bash
-git clone [https://github.com/siddharth-singh2111/siddharth-singh2111-cowscue.git](https://github.com/siddharth-singh2111/siddharth-singh2111-cowscue.git)
+git clone https://github.com/siddharth-singh2111/siddharth-singh2111-cowscue.git
 cd cowscue
+```
 
-2. Install dependencies
-Bash
+### 2. Install dependencies
+```bash
 npm install
-(Note: To run the WhatsApp bot locally, navigate to cd cowscue-bot and run npm install there as well).
+```
 
-3. Set up Environment Variables
-Create a .env.local file in the root directory and add the following keys: ```
-
+### 3. Set up Environment Variables
+Create a `.env.local` file in the root directory and add the following keys:
+```env
 # Authentication (Clerk)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_pub_key
 CLERK_SECRET_KEY=your_clerk_secret_key
@@ -106,30 +108,22 @@ TWILIO_ACCOUNT_SID=your_twilio_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
 NGO_WHATSAPP_NUMBER=whatsapp:+91YOURNUMBER
-BOT_SECRET_KEY=my_super_secret_password_123
-4. Run the Development Server
-Bash
+
+# Public URL for webhook callbacks
+NEXT_PUBLIC_APP_URL=https://your-public-url.ngrok-free.app
 ```
+
+### 4. Run the Development Server
+```bash
 npm run dev
-Open http://localhost:3000 with your browser to see the result.
+```
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-🛣️ Future Roadmap (2026 Vision)
-[ ] Multi-Stop Google Maps Integration: Send optimized OSRM routes directly to the driver's phone as a clickable, turn-by-turn Google Maps link.
+---
 
-[ ] Stale Report Escalation: Implement a background CRON job to automatically alert secondary backup shelters if a "CRITICAL" report sits pending for more than 3 hours.
-
-[ ] Scalable NGO Onboarding (RBAC): Build a dedicated portal for NGOs to apply, utilizing Clerk's Role-Based Access Control to manage permissions across different organizations.
-
-[ ] Native Android Responder App: Background GPS tracking for drivers to update the command center map in real-time.
-
-[ ] Hyper-Local Micro-Donations: Allow users to attach a frictionless UPI payment (₹50-₹500) on the success screen to pre-fund a specific rescue's fuel costs.
-
-🤝 Contributing
-Contributions, issues, and feature requests are welcome! Feel free to check the issues page. ```
+## 🤝 Contributing
+Contributions, issues, and feature requests are welcome! Feel free to check the issues page.
 
 <div align="center">
-<p>Built with ❤️ to give a voice to the voiceless.</p>
+  <p>Built with ❤️ to give a voice to the voiceless.</p>
 </div>
-
-
-Would you like to continue building out the features, or do you want to test the deployment of your latest changes first?
