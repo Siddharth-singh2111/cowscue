@@ -98,10 +98,11 @@ export default function ReportPage() {
       toast.success("Report submitted successfully!");
       router.push("/my-reports");
 
-    } catch (error: any) {
+    } catch (error) {
       console.error(error);
       setLocationStatus("error");
-      toast.error(error.message || "Something went wrong");
+      const errMsg = error instanceof Error ? error.message : "Something went wrong";
+      toast.error(errMsg);
       setLoading(false);
     }
   };

@@ -28,7 +28,7 @@ export async function GET() {
     // Check NGO role from Clerk metadata
     const role = user.publicMetadata?.role || null;
     return NextResponse.json({ role }, { status: 200 });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Role check error:", error);
     return NextResponse.json({ role: null }, { status: 500 });
   }

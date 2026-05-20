@@ -11,10 +11,17 @@ export interface IReport extends Document {
   ngoName?: string;
   driverName?: string;
   driverPhone?: string;
+  driverLatitude?: number;
+  driverLongitude?: number;
   status: "pending" | "assigned" | "resolved";
   severity: "CRITICAL" | "MODERATE" | "ROUTINE";
   injuryType: string;
   resolvedImageUrl?:string;
+  isFundraising?: boolean;
+  fundraisingTitle?: string;
+  fundraisingDescription?: string;
+  fundraisingGoal?: number;
+  fundraisingRaised?: number;
   location: {
     type: "Point";
     coordinates: number[]; 
@@ -32,6 +39,8 @@ const ReportSchema: Schema = new Schema(
     ngoName: { type: String },
     driverName: { type: String },
     driverPhone: { type: String },
+    driverLatitude: { type: Number },
+    driverLongitude: { type: Number },
     resolvedImageUrl: { type: String },
     description: { type: String, required: true },
     status: {
@@ -45,6 +54,11 @@ const ReportSchema: Schema = new Schema(
       default: "ROUTINE",
     },
     injuryType: { type: String, default: "Unknown" },
+    isFundraising: { type: Boolean, default: false },
+    fundraisingTitle: { type: String },
+    fundraisingDescription: { type: String },
+    fundraisingGoal: { type: Number, default: 0 },
+    fundraisingRaised: { type: Number, default: 0 },
     location: {
       type: { type: String, enum: ["Point"], required: true },
       coordinates: { type: [Number], required: true },

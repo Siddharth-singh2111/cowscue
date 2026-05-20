@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { Power, Flame, Upload, X, MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle, Activity, ShieldCheck } from "lucide-react";
+import { Power, Flame, Upload, X, MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle, Activity, ShieldCheck, Settings } from "lucide-react";
 import { pusherClient } from "@/lib/pusher";
 
 const RescueMap = dynamic(() => import("@/components/Map"), {
@@ -29,6 +29,16 @@ interface Report {
   injuryType: string;
   createdAt: string;
   location: { coordinates: number[] };
+  ngoName?: string;
+  driverName?: string;
+  driverPhone?: string;
+  driverLatitude?: number;
+  driverLongitude?: number;
+  isFundraising?: boolean;
+  fundraisingTitle?: string;
+  fundraisingDescription?: string;
+  fundraisingGoal?: number;
+  fundraisingRaised?: number;
 }
 
 export default function Dashboard() {
@@ -51,8 +61,167 @@ export default function Dashboard() {
   const [driverPhone, setDriverPhone] = useState("");
 
   const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
-  const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
+  const [optimizedRoute, setOptimizedRoute] = useState<GeoJSON.Geometry | undefined>(undefined);
   const [isRouting, setIsRouting] = useState(false);
+
+  // NGO Settings Modal State
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [settingsNgoName, setSettingsNgoName] = useState("");
+  const [settingsPhone, setSettingsPhone] = useState("");
+  const [settingsAddress, setSettingsAddress] = useState("");
+  const [settingsLat, setSettingsLat] = useState("");
+  const [settingsLng, setSettingsLng] = useState("");
+  const [settingsRadius, setSettingsRadius] = useState<number>(15);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+
+  // NGO Sponsorship Modal State
+  const [showSponsorModal, setShowSponsorModal] = useState(false);
+  const [selectedSponsorReport, setSelectedSponsorReport] = useState<Report | null>(null);
+  const [sponsorTitle, setSponsorTitle] = useState("");
+  const [sponsorDescription, setSponsorDescription] = useState("");
+  const [sponsorGoal, setSponsorGoal] = useState("");
+  const [isSponsorActive, setIsSponsorActive] = useState(false);
+  const [isSavingSponsor, setIsSavingSponsor] = useState(false);
+
+  const openSponsorshipModal = (report: Report) => {
+    setSelectedSponsorReport(report);
+    setSponsorTitle(report.fundraisingTitle || `Medical Fund for Injured Animal`);
+    setSponsorDescription(report.fundraisingDescription || `This animal requires urgent veterinary medical attention, medicines, and specialized feed. Please sponsor their recovery.`);
+    setSponsorGoal(report.fundraisingGoal ? String(report.fundraisingGoal) : "5000");
+    setIsSponsorActive(!!report.isFundraising);
+    setShowSponsorModal(true);
+  };
+
+  const saveSponsorship = async () => {
+    if (!selectedSponsorReport) return;
+    if (isSponsorActive && (!sponsorTitle.trim() || !sponsorDescription.trim() || !sponsorGoal)) {
+      return toast.warning("Please fill in the fundraising title, description, and goal.");
+    }
+    const goalVal = parseFloat(sponsorGoal);
+    if (isSponsorActive && (isNaN(goalVal) || goalVal <= 0)) {
+      return toast.warning("Goal must be a positive number.");
+    }
+
+    setIsSavingSponsor(true);
+    try {
+      const res = await fetch(`/api/reports/${selectedSponsorReport._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isFundraising: isSponsorActive,
+          fundraisingTitle: sponsorTitle,
+          fundraisingDescription: sponsorDescription,
+          fundraisingGoal: goalVal || 0,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setReports((prev) => prev.map((r) => r._id === selectedSponsorReport._id ? data.report : r));
+        toast.success(isSponsorActive ? "Sponsorship campaign active!" : "Sponsorship campaign paused.");
+        setShowSponsorModal(false);
+      } else {
+        const errData = await res.json();
+        toast.error(errData.error || "Failed to update sponsorship.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Something went wrong saving sponsorship settings.");
+    } finally {
+      setIsSavingSponsor(false);
+    }
+  };
+
+  const openSettings = async () => {
+    setShowSettingsModal(true);
+    try {
+      const res = await fetch("/api/ngo/profile");
+      const data = await res.json();
+      if (data.ngo) {
+        setSettingsNgoName(data.ngo.ngoName || "");
+        setSettingsPhone(data.ngo.phone || "");
+        setSettingsAddress(data.ngo.address || "");
+        setSettingsLat(data.ngo.operatingLatitude != null ? String(data.ngo.operatingLatitude) : "");
+        setSettingsLng(data.ngo.operatingLongitude != null ? String(data.ngo.operatingLongitude) : "");
+        setSettingsRadius(data.ngo.operatingRadius || 15);
+      }
+    } catch (err) {
+      console.error("Failed to fetch NGO settings:", err);
+      toast.error("Failed to load settings. Please try again.");
+    }
+  };
+
+  const detectSettingsLocation = () => {
+    if (!navigator.geolocation) {
+      return toast.error("Geolocation is not supported by your browser.");
+    }
+    setIsDetectingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setSettingsLat(String(pos.coords.latitude));
+        setSettingsLng(String(pos.coords.longitude));
+        setIsDetectingLocation(false);
+        toast.success("Location coordinates detected!");
+      },
+      (err) => {
+        console.error("Error detecting location:", err);
+        toast.error("Failed to detect location. Please input manually.");
+        setIsDetectingLocation(false);
+      },
+      { enableHighAccuracy: true }
+    );
+  };
+
+  const saveSettings = async () => {
+    if (!settingsNgoName.trim() || !settingsPhone.trim() || !settingsAddress.trim()) {
+      return toast.warning("Please fill in NGO Name, Phone, and Address.");
+    }
+    
+    const lat = settingsLat ? parseFloat(settingsLat) : undefined;
+    const lng = settingsLng ? parseFloat(settingsLng) : undefined;
+    if ((settingsLat && isNaN(lat!)) || (settingsLng && isNaN(lng!))) {
+      return toast.warning("Latitude and Longitude must be valid numbers.");
+    }
+
+    setIsSavingSettings(true);
+    try {
+      const res = await fetch("/api/ngo/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ngoName: settingsNgoName,
+          phone: settingsPhone,
+          address: settingsAddress,
+          operatingLatitude: lat,
+          operatingLongitude: lng,
+          operatingRadius: settingsRadius,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        toast.success("Workspace settings updated successfully!");
+        setShowSettingsModal(false);
+        
+        if (lat != null && lng != null) {
+          setUserLocation({ lat, lng });
+          setRadius([settingsRadius]);
+          fetchNearbyReports(lat, lng, settingsRadius);
+        } else {
+          fetchAllReports();
+        }
+      } else {
+        const errData = await res.json();
+        toast.error(errData.error || "Failed to save settings.");
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Something went wrong while saving.");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
@@ -260,6 +429,15 @@ export default function Dashboard() {
             <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 flex items-center gap-3 tracking-tight">
               <div className="bg-slate-900 p-2 rounded-xl"><Activity className="text-orange-500" size={24}/></div> 
               Suraksha Command
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={openSettings} 
+                className="rounded-full text-slate-400 hover:text-slate-900 hover:bg-slate-100 p-2 h-9 w-9 shrink-0 ml-1 transition-all"
+                title="Workspace Settings"
+              >
+                <Settings size={20} className="hover:rotate-45 transition-transform" />
+              </Button>
             </h1>
             <p className="text-slate-500 mt-2 font-medium flex items-center gap-2">
               <MapPin size={16} className="text-slate-400"/>
@@ -340,7 +518,7 @@ export default function Dashboard() {
               <p className="font-extrabold text-purple-700 text-sm flex items-center gap-2">
                 <RouteIcon size={18} /> Optimal Route Active
               </p>
-              <Button size="sm" variant="ghost" onClick={() => setOptimizedRoute(null)} className="h-8 mt-2 text-xs w-full text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-full font-bold">Clear Route</Button>
+              <Button size="sm" variant="ghost" onClick={() => setOptimizedRoute(undefined)} className="h-8 mt-2 text-xs w-full text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-full font-bold">Clear Route</Button>
             </div>
           )}
         </div>
@@ -431,6 +609,46 @@ export default function Dashboard() {
                         </div>
                       </div>
 
+                      {report.status === 'assigned' && (
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4 space-y-3">
+                          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping"></span> Live Tracking Active
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="text-[11px] font-bold border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg flex-1 py-2 h-auto"
+                              onClick={() => {
+                                const url = `${window.location.origin}/track/${report._id}`;
+                                navigator.clipboard.writeText(url);
+                                toast.success("Citizen tracking link copied!");
+                              }}
+                            >
+                              🔗 Citizen Link
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline" 
+                              className="text-[11px] font-bold border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg flex-1 py-2 h-auto"
+                              onClick={() => {
+                                const url = `${window.location.origin}/driver/${report._id}`;
+                                navigator.clipboard.writeText(url);
+                                toast.success("Driver portal link copied!");
+                              }}
+                            >
+                              🚑 Driver Portal
+                            </Button>
+                          </div>
+                          {report.driverName && (
+                            <div className="text-xs font-semibold text-slate-500 flex justify-between">
+                              <span>Driver: <strong className="text-slate-700">{report.driverName}</strong></span>
+                              {report.driverPhone && <span>Phone: <strong className="font-mono text-slate-700">{report.driverPhone}</strong></span>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <div className="flex flex-wrap gap-3">
                         <Button
                           variant={selectedReports.has(report._id) ? "default" : "outline"}
@@ -441,9 +659,18 @@ export default function Dashboard() {
                         </Button>
 
                         {report.status === 'pending' ? (
-                          <Button className="flex-1 rounded-xl font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-md" onClick={() => handleStatusChange(report._id, "assigned")}>Accept Case</Button>
+                          <Button className="flex-1 rounded-xl font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-md" onClick={() => setDispatchingId(report._id)}>Accept Case</Button>
                         ) : (
-                          <Button className="flex-1 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-md" onClick={() => setResolvingId(report._id)}>Mark Safe</Button>
+                          <div className="flex gap-2 flex-1 w-full sm:w-auto">
+                            <Button 
+                              variant="outline"
+                              className="rounded-xl font-bold border-rose-200 text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 h-11 px-4 flex-1 sm:flex-none"
+                              onClick={() => openSponsorshipModal(report)}
+                            >
+                              💝 {report.isFundraising ? "Fundraiser Live" : "Raise Funds"}
+                            </Button>
+                            <Button className="flex-grow rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-md h-11 px-4" onClick={() => setResolvingId(report._id)}>Mark Safe</Button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -535,7 +762,7 @@ export default function Dashboard() {
               {!resolvePreview ? (
                 <div onClick={() => fileInputRef.current?.click()} className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-[1.5rem] h-48 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 hover:border-emerald-300 transition-colors group">
                   <div className="bg-white p-3 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform"><Upload className="h-6 w-6 text-emerald-500" /></div>
-                  <span className="text-sm text-slate-600 font-bold">Tap to upload "After" photo</span>
+                  <span className="text-sm text-slate-600 font-bold">Tap to upload &quot;After&quot; photo</span>
                 </div>
               ) : (
                 <div className="relative h-48 w-full rounded-[1.5rem] overflow-hidden border-4 border-slate-100 shadow-inner">
@@ -562,6 +789,202 @@ export default function Dashboard() {
                 <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full h-12 font-bold shadow-lg shadow-emerald-500/20" onClick={submitResolution} disabled={isUploading}>
                   {isUploading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <CheckCircle2 className="h-5 w-5 mr-2" />} 
                   Complete Rescue
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      {/* ⚙️ NEW: NGO WORKSPACE SETTINGS MODAL */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
+          <Card className="w-full max-w-lg shadow-2xl animate-in zoom-in-95 rounded-[2rem] border-0 overflow-hidden my-8">
+            <CardHeader className="bg-slate-900 text-white p-6">
+              <CardTitle className="text-2xl font-extrabold flex items-center gap-2">
+                ⚙️ Workspace Settings
+              </CardTitle>
+              <p className="text-sm text-slate-400 mt-1 font-medium">Manage your NGO profile, location center, and geofencing radius.</p>
+            </CardHeader>
+            <CardContent className="p-6 sm:p-8 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">NGO Brand Name</label>
+                <input 
+                  type="text" 
+                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
+                  placeholder="NGO Name"
+                  value={settingsNgoName}
+                  onChange={(e) => setSettingsNgoName(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Public Phone Number</label>
+                <input 
+                  type="tel" 
+                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
+                  placeholder="+91 98765 43210"
+                  value={settingsPhone}
+                  onChange={(e) => setSettingsPhone(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Office Address</label>
+                <input 
+                  type="text" 
+                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
+                  placeholder="e.g. 123 Rescue Way, New Delhi"
+                  value={settingsAddress}
+                  onChange={(e) => setSettingsAddress(e.target.value)}
+                />
+              </div>
+
+              <div className="border-t border-slate-100 my-4 pt-4 space-y-4">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Geofence Operating Coordinates</label>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    disabled={isDetectingLocation}
+                    className="h-8 text-xs font-bold rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50"
+                    onClick={detectSettingsLocation}
+                  >
+                    {isDetectingLocation ? <Loader2 className="animate-spin h-3.5 w-3.5 mr-1" /> : <MapPin className="h-3.5 w-3.5 mr-1" />}
+                    Detect GPS
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Latitude</label>
+                    <input 
+                      type="text" 
+                      className="w-full h-10 rounded-lg bg-slate-50 border border-slate-200 px-3 font-mono text-xs focus:ring-2 focus:ring-orange-500 outline-none" 
+                      placeholder="e.g. 28.6139"
+                      value={settingsLat}
+                      onChange={(e) => setSettingsLat(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Longitude</label>
+                    <input 
+                      type="text" 
+                      className="w-full h-10 rounded-lg bg-slate-50 border border-slate-200 px-3 font-mono text-xs focus:ring-2 focus:ring-orange-500 outline-none" 
+                      placeholder="e.g. 77.2090"
+                      value={settingsLng}
+                      onChange={(e) => setSettingsLng(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  <span>Coverage Radius</span>
+                  <span className="text-orange-600 font-mono text-sm">{settingsRadius} km</span>
+                </div>
+                <div className="pt-2">
+                  <Slider 
+                    value={[settingsRadius]} 
+                    min={1} 
+                    max={100} 
+                    step={1} 
+                    onValueChange={(val) => setSettingsRadius(val[0])} 
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-6 border-t border-slate-100">
+                <Button variant="outline" className="flex-1 rounded-full h-12 font-bold" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
+                <Button 
+                  className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-full h-12 font-bold shadow-lg shadow-orange-500/25 border-0" 
+                  onClick={saveSettings}
+                  disabled={isSavingSettings}
+                >
+                  {isSavingSettings ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : "Save Changes"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      {/* 💝 NEW: NGO SPONSORSHIP SETUP MODAL */}
+      {showSponsorModal && selectedSponsorReport && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
+          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 rounded-[2rem] border-0 overflow-hidden my-8">
+            <CardHeader className="bg-slate-900 text-white p-6">
+              <CardTitle className="text-2xl font-extrabold flex items-center gap-2">
+                💝 Sponsor Rescue Fund
+              </CardTitle>
+              <p className="text-sm text-slate-400 mt-1 font-medium">Activate public crowdfunding for this animal&apos;s medical expenses.</p>
+            </CardHeader>
+            <CardContent className="p-6 sm:p-8 space-y-4 max-h-[70vh] overflow-y-auto">
+              
+              <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100 mb-2">
+                <div className="space-y-0.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Fundraiser Status</label>
+                  <p className="text-xs text-slate-400 font-medium">Allow public donations to this rescue.</p>
+                </div>
+                <input 
+                  type="checkbox"
+                  className="w-10 h-6 bg-slate-200 checked:bg-rose-500 rounded-full cursor-pointer focus:ring-0 outline-none transition-colors accent-rose-500"
+                  checked={isSponsorActive}
+                  onChange={(e) => setIsSponsorActive(e.target.checked)}
+                />
+              </div>
+
+              {isSponsorActive && (
+                <div className="space-y-4 animate-in slide-in-from-top-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Fundraiser Title</label>
+                    <input 
+                      type="text" 
+                      className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-rose-500 outline-none" 
+                      placeholder="e.g. Help Ramesh walk again"
+                      value={sponsorTitle}
+                      onChange={(e) => setSponsorTitle(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Goal Target Amount (INR/USD)</label>
+                    <input 
+                      type="number" 
+                      className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-rose-500 outline-none font-mono" 
+                      placeholder="e.g. 5000"
+                      value={sponsorGoal}
+                      onChange={(e) => setSponsorGoal(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Description & Expenses Context</label>
+                    <textarea 
+                      rows={3}
+                      className="w-full rounded-xl bg-slate-50 border border-slate-200 p-4 font-medium focus:ring-2 focus:ring-rose-500 outline-none text-sm resize-none" 
+                      placeholder="Describe what the funds will be used for (vet fees, transport, medicines)..."
+                      value={sponsorDescription}
+                      onChange={(e) => setSponsorDescription(e.target.value)}
+                    />
+                  </div>
+
+                  {selectedSponsorReport.fundraisingRaised != null && (
+                    <div className="text-xs font-bold text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between">
+                      <span>Total Raised So Far:</span>
+                      <span className="text-rose-600 font-mono text-sm">${selectedSponsorReport.fundraisingRaised}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-6 border-t border-slate-100">
+                <Button variant="outline" className="flex-1 rounded-full h-12 font-bold" onClick={() => setShowSponsorModal(false)}>Cancel</Button>
+                <Button 
+                  className="flex-1 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-full h-12 font-bold shadow-lg shadow-rose-500/25 border-0" 
+                  onClick={saveSponsorship}
+                  disabled={isSavingSponsor}
+                >
+                  {isSavingSponsor ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : "Save Settings"}
                 </Button>
               </div>
             </CardContent>

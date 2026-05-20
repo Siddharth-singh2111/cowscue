@@ -1,18 +1,36 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { SignInButton, SignedIn, SignedOut, UserButton, useUser } from "@clerk/nextjs";
-import { Map, LayoutDashboard, HeartHandshake, Trophy, Sparkles } from "lucide-react";
+import { Map, LayoutDashboard, HeartHandshake, Trophy, Sparkles, ShieldAlert } from "lucide-react";
 
 const Navbar = () => {
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const pathname = usePathname(); 
+  const [role, setRole] = useState<string | null>(null);
+  const activeRole = role || (isLoaded && user ? (user.publicMetadata?.role as string) || null : null);
 
-  const role = user?.publicMetadata?.role as string | undefined;
-  const isAdmin = role === "ngo";
+  useEffect(() => {
+    if (isLoaded && user) {
+      // Fetch the actual role including backend-configured superadmins
+      fetch("/api/auth/role")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.role) {
+            setRole(data.role);
+          }
+        })
+        .catch((err) => console.error("Error fetching role in Navbar:", err));
+    } else if (isLoaded && !user) {
+      setTimeout(() => {
+        setRole(null);
+      }, 0);
+    }
+  }, [user, isLoaded]);
 
   return (
     <>
@@ -40,24 +58,42 @@ const Navbar = () => {
 
           {/* RIGHT: Navigation & Auth */}
           <div className="flex items-center gap-1 sm:gap-2">
-            <Link href="/apply" className="hidden sm:block mr-1">
-              <Button variant="ghost" className="rounded-full text-slate-500 hover:text-orange-600 hover:bg-orange-50 font-bold text-xs uppercase tracking-wider h-9 transition-colors">
-                Partner NGO
-              </Button>
-            </Link>
+            {/* Show "Partner NGO" button only to users who are NOT superadmin and NOT an NGO admin */}
+            {activeRole !== "superadmin" && activeRole !== "ngo" && (
+              <Link href="/apply" className="hidden sm:block mr-1">
+                <Button variant="ghost" className="rounded-full text-slate-500 hover:text-orange-600 hover:bg-orange-50 font-bold text-xs uppercase tracking-wider h-9 transition-colors">
+                  Partner NGO
+                </Button>
+              </Link>
+            )}
             <SignedIn>
-              {isAdmin ? (
+              {activeRole === "superadmin" ? (
+                /* --- SUPERADMIN HUB --- */
+                <Link href="/admin">
+                  <Button 
+                    variant="ghost"
+                    className={`font-semibold hidden sm:flex rounded-full px-5 transition-all ${
+                      pathname === "/admin" 
+                        ? "bg-slate-900 text-white hover:bg-yellow-300 shadow-md" 
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    <ShieldAlert size={18} className="mr-2 text-blue-500 animate-pulse" /> 
+                    Admin Hub
+                  </Button>
+                </Link>
+              ) : activeRole === "ngo" ? (
                 /* --- NGO ADMIN VIEW --- */
                 <Link href="/dashboard">
                   <Button 
                     variant="ghost"
                     className={`font-semibold hidden sm:flex rounded-full px-5 transition-all ${
                       pathname === "/dashboard" 
-                        ? "bg-slate-900 text-white hover:bg-slate-800 shadow-md" 
+                        ? "bg-slate-900 text-white hover:bg-yellow-300 shadow-md" 
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                     }`}
                   >
-                    <LayoutDashboard size={18} className="mr-2" /> 
+                    <LayoutDashboard size={18} className="mr-2 text-orange-500" /> 
                     Command Center
                   </Button>
                 </Link>
@@ -92,8 +128,8 @@ const Navbar = () => {
                 </div>
               )}
               
-              {/* Report Emergency Button (Desktop) */}
-              {!isAdmin && (
+              {/* Report Emergency Button (Desktop) - Hide for superadmin and NGO */}
+              {activeRole !== "superadmin" && activeRole !== "ngo" && (
                 <Link href="/report" className="hidden sm:block ml-2">
                   <Button className="rounded-full bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-700 hover:to-amber-600 text-white shadow-lg shadow-orange-500/25 border-0 font-semibold px-6 transition-all hover:-translate-y-0.5">
                     <HeartHandshake size={18} className="mr-2" /> Report Rescue
@@ -133,7 +169,13 @@ const Navbar = () => {
               <span className="text-[9px] font-semibold tracking-wider">HOME</span>
             </Link>
             
-            {isAdmin ? (
+            {activeRole === "superadmin" ? (
+              <Link href="/admin" className={`flex flex-col items-center gap-1 transition-colors relative ${pathname === "/admin" ? "text-blue-400" : "text-slate-400 hover:text-slate-200"}`}>
+                {pathname === "/admin" && <span className="absolute -top-3 w-1 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_2px_rgba(59,130,246,0.5)]"></span>}
+                <ShieldAlert size={22} strokeWidth={pathname === "/admin" ? 2.5 : 2} />
+                <span className="text-[9px] font-semibold tracking-wider">ADMIN</span>
+              </Link>
+            ) : activeRole === "ngo" ? (
               <Link href="/dashboard" className={`flex flex-col items-center gap-1 transition-colors relative ${pathname === "/dashboard" ? "text-orange-400" : "text-slate-400 hover:text-slate-200"}`}>
                 {pathname === "/dashboard" && <span className="absolute -top-3 w-1 h-1 bg-orange-500 rounded-full shadow-[0_0_8px_2px_rgba(249,115,22,0.5)]"></span>}
                 <LayoutDashboard size={22} strokeWidth={pathname === "/dashboard" ? 2.5 : 2} />

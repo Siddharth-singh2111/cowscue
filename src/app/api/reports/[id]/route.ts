@@ -6,6 +6,24 @@ import { updateReportStatusSchema } from "@/lib/validations";
 import { pusherServer } from "@/lib/pusher";
 import { sendWhatsAppMessage } from "@/lib/twilio";
 
+export async function GET(
+  req: Request,
+  props: { params: Promise<{ id: string }> }
+) {
+  try {
+    const params = await props.params;
+    await connectDB();
+    const report = await Report.findById(params.id);
+    if (!report) {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
+    }
+    return NextResponse.json({ report }, { status: 200 });
+  } catch (error: unknown) {
+    console.error("GET Report Error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}
+
 export async function PATCH(
   req: Request,
   props: { params: Promise<{ id: string }> }
@@ -18,6 +36,34 @@ export async function PATCH(
     const params = await props.params;
     const body = await req.json();
 
+    await connectDB();
+
+    // SCENARIO 3: NGO updating fundraising settings
+    if ("isFundraising" in body) {
+      const updatedReport = await Report.findOneAndUpdate(
+        { _id: params.id },
+        {
+          isFundraising: body.isFundraising,
+          fundraisingTitle: body.fundraisingTitle,
+          fundraisingDescription: body.fundraisingDescription,
+          fundraisingGoal: body.fundraisingGoal,
+        },
+        { new: true }
+      );
+
+      if (!updatedReport) {
+        return NextResponse.json({ error: "Report not found." }, { status: 404 });
+      }
+
+      try {
+        await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
+      } catch (e: unknown) {
+        console.error("Pusher error:", e);
+      }
+
+      return NextResponse.json({ report: updatedReport }, { status: 200 });
+    }
+
     // Validate the status transition
     const parsed = updateReportStatusSchema.safeParse(body);
     if (!parsed.success) {
@@ -25,7 +71,6 @@ export async function PATCH(
       return NextResponse.json({ error: firstError }, { status: 400 });
     }
 
-    await connectDB();
     const data = parsed.data;
 
     // SCENARIO 1: NGO Trying to Accept a Case
@@ -50,17 +95,21 @@ export async function PATCH(
 
       try {
         await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
-      } catch (e) {
+      } catch (e: unknown) {
         console.error("Pusher error:", e);
       }
 
-      // Notify WhatsApp users about their rescue being accepted
+      // Notify WhatsApp users about their rescue being accepted with a live tracking link
       if (updatedReport.reporterId?.startsWith("whatsapp-") && updatedReport.reporterPhone) {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://cowscue.vercel.app";
+        const trackingUrl = `${appUrl}/track/${updatedReport._id}`;
+        
         sendWhatsAppMessage(
           updatedReport.reporterPhone,
           "🚑 *Rescue Update!*\n\n" +
-            "An NGO has accepted your rescue request and a driver is on the way to the location you shared."
-        ).catch((err) => console.error("WhatsApp notification failed:", err));
+            `An NGO has accepted your rescue request. Driver *${updatedReport.driverName || "Team"}* is on the way.\n\n` +
+            `📍 Track the ambulance live: ${trackingUrl}`
+        ).catch((err: unknown) => console.error("WhatsApp notification failed:", err));
       }
 
       return NextResponse.json({ report: updatedReport }, { status: 200 });
@@ -80,7 +129,7 @@ export async function PATCH(
 
       try {
         await pusherServer.trigger("cowscue-alerts", "status-update", updatedReport);
-      } catch (e) {
+      } catch (e: unknown) {
         console.error("Pusher error:", e);
       }
 
@@ -93,14 +142,14 @@ export async function PATCH(
             "The cow has been safely rescued by the NGO.\n\n" +
             `⭐ *Karma Points:* You now have ${rescueCount} successful rescues!\n\n` +
             "Thank you for giving a voice to the voiceless. 🐄"
-        ).catch((err) => console.error("WhatsApp notification failed:", err));
+        ).catch((err: unknown) => console.error("WhatsApp notification failed:", err));
       }
 
       return NextResponse.json({ report: updatedReport }, { status: 200 });
     }
 
     return NextResponse.json({ error: "Invalid status transition" }, { status: 400 });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Update Error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

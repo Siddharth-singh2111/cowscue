@@ -149,7 +149,7 @@ export default function MyReports() {
             <div className="bg-slate-100 p-6 rounded-full w-fit mx-auto mb-6">
               <Camera size={48} className="text-slate-400" />
             </div>
-            <p className="text-2xl font-bold text-slate-700 mb-2">You haven't reported any cows yet.</p>
+            <p className="text-2xl font-bold text-slate-700 mb-2">You haven&apos;t reported any cows yet.</p>
             <p className="text-slate-500 mb-8 max-w-sm mx-auto">Be the hero they need. If you see an injured animal, snap a photo and drop a pin.</p>
             <Link href="/report">
               <Button size="lg" className="bg-orange-600 hover:bg-orange-700 rounded-full h-14 px-10 text-lg font-bold shadow-xl shadow-orange-500/20 transition-transform hover:-translate-y-1">Report Your First Rescue</Button>

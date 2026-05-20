@@ -133,7 +133,7 @@ export default function Home() {
               </div>
               <h4 className="text-2xl font-bold text-slate-900 mb-3">Rescue Dispatched</h4>
               <p className="text-slate-500 leading-relaxed px-4 text-base">
-                Nearby NGOs receive a high-priority WhatsApp alert with an optimized route directly to the animal's location.
+                Nearby NGOs receive a high-priority WhatsApp alert with an optimized route directly to the animal&apos;s location.
               </p>
             </div>
           </div>

@@ -30,7 +30,7 @@ export async function GET(req: Request) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error fetching my reports:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }

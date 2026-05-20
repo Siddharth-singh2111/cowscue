@@ -33,12 +33,16 @@ function HeatmapLayer({ reports }: { reports: MapReport[] }) {
     const points = reports.map(r => [r.location.coordinates[1], r.location.coordinates[0], 1]);
     
     // Create and add the heatmap layer
-    const heatLayer = (L as any).heatLayer(points, {
+    const leafletApp = L as unknown as {
+      heatLayer: (points: number[][], options: Record<string, unknown>) => L.Layer;
+    };
+    const heatLayer = leafletApp.heatLayer(points, {
       radius: 25,
       blur: 15,
       maxZoom: 15,
-      gradient: { 0.4: 'blue', 0.6: 'cyan', 0.7: 'lime', 0.8: 'yellow', 1: 'red' }
-    }).addTo(map);
+      gradient: { 0.4: "blue", 0.6: "cyan", 0.7: "lime", 0.8: "yellow", 1: "red" }
+    });
+    map.addLayer(heatLayer);
 
     return () => {
       map.removeLayer(heatLayer); // Cleanup on unmount
