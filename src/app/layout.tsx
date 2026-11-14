@@ -1,41 +1,50 @@
-// src/app/layout.tsx
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import { ClerkProvider } from '@clerk/nextjs'
-import { Toaster } from 'sonner'
-import Navbar from "@/components/Navbar"; 
-import Footer from "@/components/Footer"; 
+import type { Metadata, Viewport } from "next";
+import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { ClerkProvider } from "@clerk/nextjs";
+import { Toaster } from "sonner";
+import { Providers } from "@/components/providers";
+import { SiteHeader } from "@/components/site-header";
+import { SiteFooter } from "@/components/site-footer";
 import Chatbot from "@/components/Chatbot";
+import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
+const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-instrument-serif" });
 
 export const metadata: Metadata = {
-  title: "Cowscue | Rescue Stray Cattle",
-  description: "A platform to connect injured stray cows with nearest NGOs.",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
+  title: { default: "Cowscue — Rescue dispatch for injured stray cattle", template: "%s · Cowscue" },
+  description:
+    "Snap a photo, drop a pin, and Cowscue's AI triage dispatches the nearest verified NGO in seconds. Track the ambulance live.",
+  applicationName: "Cowscue",
+  manifest: "/manifest.webmanifest",
+  openGraph: { type: "website", siteName: "Cowscue", locale: "en_IN" },
+  twitter: { card: "summary_large_image" },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  return (
-    <ClerkProvider>
-      <html lang="en">
-        <body className={`${inter.className} flex flex-col min-h-screen`}>
-          {/* TOP NAVIGATION */}
-          <Navbar />
-          
-          {/* MAIN PAGE CONTENT */}
-          <main className="flex-grow bg-slate-50">
-            {children}
-          </main>
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fcfaf7" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a1714" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
-          {/* 🟢 2. THE NEW FOOTER */}
-          <Footer />
-          <Chatbot/>
-          <Toaster richColors position="top-center" closeButton />
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <ClerkProvider appearance={{ variables: { colorPrimary: "#e8742c", borderRadius: "0.75rem" } }}>
+      <html lang="en" suppressHydrationWarning>
+        <body className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} flex min-h-dvh flex-col font-sans`}>
+          <Providers>
+            <SiteHeader />
+            <main className="flex-1">{children}</main>
+            <SiteFooter />
+            <Chatbot />
+            <Toaster position="top-center" richColors closeButton toastOptions={{ className: "!rounded-2xl" }} />
+          </Providers>
         </body>
       </html>
     </ClerkProvider>

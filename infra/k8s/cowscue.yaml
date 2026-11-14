@@ -1,0 +1,167 @@
+# Kubernetes deployment for Cowscue.
+#   kubectl apply -f infra/k8s/cowscue.yaml
+# Secrets are expected in a Secret named "cowscue-secrets" (see README → Deploying to Kubernetes).
+# Redis and MongoDB should be managed services (e.g. Upstash/ElastiCache + MongoDB Atlas).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cowscue
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cowscue-config
+  namespace: cowscue
+data:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  NEXT_PUBLIC_PUSHER_CLUSTER: ap2
+  WORKER_CONCURRENCY: "10"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: cowscue
+  labels: { app: cowscue, tier: web }
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }   # zero-downtime deploys
+  selector:
+    matchLabels: { app: cowscue, tier: web }
+  template:
+    metadata:
+      labels: { app: cowscue, tier: web }
+    spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app: cowscue, tier: web } }
+      containers:
+        - name: web
+          image: ghcr.io/your-org/cowscue-web:latest
+          ports: [{ containerPort: 3000, name: http }]
+          envFrom:
+            - configMapRef: { name: cowscue-config }
+            - secretRef: { name: cowscue-secrets }
+          env:
+            - { name: SERVICE_NAME, value: cowscue-web }
+          resources:
+            requests: { cpu: 250m, memory: 384Mi }
+            limits: { cpu: "1", memory: 768Mi }
+          readinessProbe:
+            httpGet: { path: /api/ready, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          lifecycle:
+            preStop: { exec: { command: ["sleep", "5"] } }   # let the LB drain in-flight requests
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: cowscue
+spec:
+  selector: { app: cowscue, tier: web }
+  ports: [{ port: 80, targetPort: http, name: http }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web
+  namespace: cowscue
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: web }
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 65 } }
+  behavior:
+    scaleDown: { stabilizationWindowSeconds: 300 }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web
+  namespace: cowscue
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: { app: cowscue, tier: web }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: cowscue
+  labels: { app: cowscue, tier: worker }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: cowscue, tier: worker }
+  template:
+    metadata:
+      labels: { app: cowscue, tier: worker }
+    spec:
+      terminationGracePeriodSeconds: 60   # worker.close() drains in-flight jobs on SIGTERM
+      containers:
+        - name: worker
+          image: ghcr.io/your-org/cowscue-worker:latest
+          ports: [{ containerPort: 3001, name: health }]
+          envFrom:
+            - configMapRef: { name: cowscue-config }
+            - secretRef: { name: cowscue-secrets }
+          env:
+            - { name: SERVICE_NAME, value: cowscue-worker }
+            - { name: MONGO_POOL_SIZE, value: "20" }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /, port: health }
+            periodSeconds: 20
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  namespace: cowscue
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: worker }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cowscue
+  namespace: cowscue
+  annotations:
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    nginx.ingress.kubernetes.io/proxy-body-size: 12m
+    nginx.ingress.kubernetes.io/load-balance: ewma
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [cowscue.example.com]
+      secretName: cowscue-tls
+  rules:
+    - host: cowscue.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: web, port: { name: http } } }

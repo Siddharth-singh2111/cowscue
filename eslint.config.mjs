@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Separate CommonJS package with its own toolchain.
+    "cowscue-bot/**",
   ]),
 ]);
 

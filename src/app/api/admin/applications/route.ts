@@ -1,21 +1,9 @@
-import { NextResponse } from "next/server";
-import connectDB from "@/lib/db";
-import NgoApplication from "@/models/NgoApplication";
-import { requireAuth, isAuthError } from "@/lib/auth";
+import { z } from "zod";
+import { route } from "@/server/http/route";
+import { listApplications } from "@/server/services/ngos";
 
-export async function GET() {
-  try {
-    const auth = await requireAuth("superadmin");
-    if (isAuthError(auth)) return auth;
+const query = z.object({ status: z.enum(["pending", "approved", "rejected", "suspended"]).optional() });
 
-    await connectDB();
-
-    // Fetch all applications, newest first
-    const applications = await NgoApplication.find({}).sort({ createdAt: -1 });
-
-    return NextResponse.json({ applications }, { status: 200 });
-  } catch (error) {
-    console.error("Admin Fetch Error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-  }
-}
+export const GET = route({ access: "superadmin" }, async (ctx) => ({
+  applications: await listApplications(ctx.query(query).status),
+}));

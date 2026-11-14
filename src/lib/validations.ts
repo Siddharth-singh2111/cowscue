@@ -1,120 +1,123 @@
 import { z } from "zod";
+import { CLOSE_REASONS } from "@/types";
 
-// ─── Phone Number ───────────────────────────────────────────────
-// Indian phone numbers: optional +91 prefix, then 10 digits starting with 6-9
+/** Shared (client + server) input schemas. The server re-validates everything it receives. */
+
 const indianPhoneRegex = /^(\+91[\s-]?)?[6-9]\d{9}$/;
 
 export const phoneSchema = z
   .string()
   .trim()
-  .regex(indianPhoneRegex, "Please enter a valid Indian phone number (e.g., +91 9876543210)");
+  .transform((v) => v.replace(/[\s-]/g, ""))
+  .pipe(z.string().regex(indianPhoneRegex, "Enter a valid Indian mobile number, e.g. +91 98765 43210"));
 
-// ─── Report Submission ──────────────────────────────────────────
+const cloudinaryUrl = z
+  .string()
+  .url("Image URL must be a valid URL")
+  .refine((url) => {
+    try {
+      return new URL(url).hostname === "res.cloudinary.com";
+    } catch {
+      return false;
+    }
+  }, "Images must be uploaded via Cloudinary");
+
+const lat = z.number().min(-90).max(90);
+const lng = z.number().min(-180).max(180);
+
 export const createReportSchema = z.object({
-  imageUrl: z
-    .string()
-    .url("Image URL must be a valid URL")
-    .refine(
-      (url) => url.includes("cloudinary.com") || url.includes("res.cloudinary.com"),
-      "Image must be uploaded via Cloudinary"
-    ),
+  imageUrl: cloudinaryUrl,
   description: z
     .string()
     .trim()
-    .min(10, "Description must be at least 10 characters")
-    .max(500, "Description must be under 500 characters"),
-  latitude: z
-    .number()
-    .min(-90, "Invalid latitude")
-    .max(90, "Invalid latitude"),
-  longitude: z
-    .number()
-    .min(-180, "Invalid longitude")
-    .max(180, "Invalid longitude"),
+    .min(10, "Please describe the situation in at least 10 characters")
+    .max(500, "Keep the description under 500 characters"),
+  latitude: lat,
+  longitude: lng,
   reporterPhone: phoneSchema,
 });
 
-// ─── Report Status Update ───────────────────────────────────────
-export const updateReportStatusSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("assigned"),
-    ngoName: z.string().trim().min(1, "NGO name is required"),
-    driverName: z.string().trim().min(1, "Driver name is required").optional(),
-    driverPhone: phoneSchema.optional(),
-  }),
-  z.object({
-    status: z.literal("resolved"),
-    resolvedImageUrl: z
-      .string()
-      .url("Resolved image URL must be valid")
-      .optional(),
-  }),
-]);
-
-// ─── Nearby Reports Query ───────────────────────────────────────
-export const nearbyQuerySchema = z.object({
-  lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
-  radius: z.coerce.number().min(1).max(100).default(10),
+export const assignSchema = z.object({
+  driverName: z.string().trim().min(2, "Driver name is required").max(80),
+  driverPhone: phoneSchema,
 });
 
-// ─── NGO Application ───────────────────────────────────────────
+export const resolveSchema = z.object({
+  resolvedImageUrl: cloudinaryUrl,
+  notes: z.string().trim().max(500).optional(),
+});
+
+export const closeSchema = z.object({
+  reason: z.enum(CLOSE_REASONS),
+  note: z.string().trim().max(300).optional(),
+});
+
+export const fundraiserSchema = z
+  .object({
+    active: z.boolean(),
+    title: z.string().trim().max(100).optional(),
+    description: z.string().trim().max(1000).optional(),
+    goal: z.number().int().min(0).max(10_000_000).optional(),
+  })
+  .refine((v) => !v.active || (v.title && v.title.length >= 5 && v.description && v.description.length >= 20 && v.goal && v.goal >= 100), {
+    message: "An active fundraiser needs a title (5+ chars), a description (20+ chars) and a goal of at least ₹100.",
+  });
+
+export const driverLocationSchema = z.object({
+  latitude: lat,
+  longitude: lng,
+  accuracy: z.number().min(0).max(10_000).optional(),
+});
+
+export const donationSchema = z.object({
+  amount: z.number().int("Whole rupees only").min(10, "Minimum donation is ₹10").max(100_000, "Maximum single donation is ₹1,00,000"),
+  sponsorName: z.string().trim().max(60).optional(),
+  message: z.string().trim().max(140).optional(),
+});
+
+export const feedQuerySchema = z.object({
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  radius: z.coerce.number().min(1).max(100).default(15),
+});
+
 export const ngoApplicationSchema = z.object({
-  ngoName: z
-    .string()
-    .trim()
-    .min(2, "NGO name must be at least 2 characters")
-    .max(100, "NGO name must be under 100 characters"),
-  registrationNumber: z
-    .string()
-    .trim()
-    .min(3, "Registration number is required")
-    .max(50, "Registration number is too long"),
-  contactPerson: z
-    .string()
-    .trim()
-    .min(2, "Contact person name is required")
-    .max(100, "Name is too long"),
+  ngoName: z.string().trim().min(2, "NGO name must be at least 2 characters").max(100),
+  registrationNumber: z.string().trim().min(3, "Registration number is required").max(50),
+  contactPerson: z.string().trim().min(2, "Contact person is required").max(100),
   phone: phoneSchema,
-  address: z
-    .string()
-    .trim()
-    .min(10, "Address must be at least 10 characters")
-    .max(300, "Address must be under 300 characters"),
+  address: z.string().trim().min(10, "Address must be at least 10 characters").max(300),
+  operatingLatitude: lat.optional(),
+  operatingLongitude: lng.optional(),
+  operatingRadius: z.number().min(1).max(100).optional(),
 });
 
-// ─── Chat Message ───────────────────────────────────────────────
+export const ngoProfileSchema = z.object({
+  ngoName: z.string().trim().min(2).max(100),
+  phone: phoneSchema,
+  address: z.string().trim().min(10).max(300),
+  operatingLatitude: lat.nullable().optional(),
+  operatingLongitude: lng.nullable().optional(),
+  operatingRadius: z.number().min(1).max(100),
+});
+
+export const ngoStatusSchema = z.object({ isAccepting: z.boolean() });
+
+export const adminDecisionSchema = z.object({ reason: z.string().trim().max(300).optional() });
+
 export const chatMessageSchema = z.object({
-  message: z
-    .string()
-    .trim()
-    .min(1, "Message cannot be empty")
-    .max(1000, "Message is too long"),
+  message: z.string().trim().min(1, "Message cannot be empty").max(1000, "Message is too long"),
   history: z
-    .array(
-      z.object({
-        role: z.enum(["user", "model"]),
-        content: z.string(),
-      })
-    )
-    .max(50, "Conversation history is too long")
+    .array(z.object({ role: z.enum(["user", "model"]), content: z.string().max(4000) }))
+    .max(30)
     .default([]),
 });
 
-// ─── WhatsApp Webhook ───────────────────────────────────────────
-export const whatsappWebhookSchema = z.object({
-  base64Image: z
-    .string()
-    .min(100, "Image data is required"),
-  phone: z
-    .string()
-    .trim()
-    .min(10, "Phone number is required"),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+export const whatsappBotSchema = z.object({
+  base64Image: z.string().min(100, "Image data is required").max(12_000_000),
+  phone: z.string().trim().min(10),
+  latitude: lat,
+  longitude: lng,
 });
 
-// ─── NGO Status Toggle ─────────────────────────────────────────
-export const ngoStatusSchema = z.object({
-  isAccepting: z.boolean(),
-});
+export type CreateReportInput = z.infer<typeof createReportSchema>;

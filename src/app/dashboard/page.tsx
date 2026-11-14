@@ -1,996 +1,618 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import dynamic from "next/dynamic";
-import { useUser } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
+import { useAuth } from "@clerk/nextjs";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  Activity,
+  BarChart3,
+  CheckCircle2,
+  Flame,
+  Inbox,
+  LayoutList,
+  Map as MapIcon,
+  Navigation,
+  Radar,
+  Route as RouteIcon,
+  Settings2,
+  Siren,
+  Timer,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
+import { Channels, Events, type NgoProfile, type NgoStats, type OpsReport } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
-import { Power, Flame, Upload, X, MapPin, AlertTriangle, CheckCircle2, Route as RouteIcon, Loader2, Star, Navigation, MessageCircle, Activity, ShieldCheck, Settings } from "lucide-react";
-import { pusherClient } from "@/lib/pusher";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/empty-state";
+import { useMe } from "@/hooks/useMe";
+import { api, errorMessage } from "@/lib/api";
+import { formatMinutes } from "@/lib/format";
+import { useChannel, useRealtimeStatus } from "@/lib/realtime";
+import { cn } from "@/lib/utils";
+import { Analytics } from "./_components/Analytics";
+import { CaseCard } from "./_components/CaseCard";
+import { CaseSheet } from "./_components/CaseSheet";
+import { SettingsDialog } from "./_components/dialogs";
+import { Gate } from "./_components/Gate";
+import { haversineKm, isActive, isDone, sortQueue } from "./_components/lib";
 
-const RescueMap = dynamic(() => import("@/components/Map"), {
+const OpsMap = dynamic(() => import("@/components/maps/OpsMap"), {
   ssr: false,
-  loading: () => <div className="h-[400px] w-full bg-slate-100 animate-pulse rounded-[2rem]">Loading Map...</div>
+  loading: () => <Skeleton className="size-full rounded-none" />,
 });
 
-interface Report {
-  _id: string;
-  reporterName: string;
-  reporterPhone: string;
-  reporterHistory: number;
-  imageUrl: string;
-  description: string;
-  status: string;
-  severity: string;
-  injuryType: string;
-  createdAt: string;
-  location: { coordinates: number[] };
-  ngoName?: string;
-  driverName?: string;
-  driverPhone?: string;
-  driverLatitude?: number;
-  driverLongitude?: number;
-  isFundraising?: boolean;
-  fundraisingTitle?: string;
-  fundraisingDescription?: string;
-  fundraisingGoal?: number;
-  fundraisingRaised?: number;
+type LatLng = { lat: number; lng: number };
+type QueueTab = "queue" | "active" | "done";
+
+export default function DashboardPage() {
+  const { me, loading } = useMe();
+  if (loading || !me) return <DashboardSkeleton />;
+  if (me.role !== "ngo" && me.role !== "superadmin") return <Gate signedIn={me.signedIn} />;
+  return <CommandCenter isAdmin={me.role === "superadmin"} ngoName={me.ngo?.ngoName} initialAccepting={me.ngo?.isAccepting ?? true} />;
 }
 
-export default function Dashboard() {
-  const { user, isLoaded } = useUser();
-  const router = useRouter();
-  const [reports, setReports] = useState<Report[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [radius, setRadius] = useState([15]);
-  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(false);
-  const [isAccepting, setIsAccepting] = useState(true);
-  const [isToggling, setIsToggling] = useState(false);
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
-  const [resolveFile, setResolveFile] = useState<File | null>(null);
-  const [resolvePreview, setResolvePreview] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dispatchingId, setDispatchingId] = useState<string | null>(null);
-  const [driverName, setDriverName] = useState("");
-  const [driverPhone, setDriverPhone] = useState("");
+function CommandCenter({ isAdmin, ngoName, initialAccepting }: { isAdmin: boolean; ngoName?: string; initialAccepting: boolean }) {
+  const { userId } = useAuth();
+  const { refresh: refreshMe } = useMe();
 
-  const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
-  const [optimizedRoute, setOptimizedRoute] = useState<GeoJSON.Geometry | undefined>(undefined);
-  const [isRouting, setIsRouting] = useState(false);
+  // ── Area of operations ───────────────────────────────────────────────────
+  const profileSWR = useSWR<{ ngo: NgoProfile }>(isAdmin ? null : "/api/ngo/profile", { shouldRetryOnError: false });
+  const profile = profileSWR.data?.ngo;
+  const base = useMemo<LatLng | null>(
+    () =>
+      profile?.operatingLatitude != null && profile.operatingLongitude != null
+        ? { lat: profile.operatingLatitude, lng: profile.operatingLongitude }
+        : null,
+    [profile?.operatingLatitude, profile?.operatingLongitude]
+  );
+  const [center, setCenter] = useState<LatLng | null>(null);
+  const [areaReady, setAreaReady] = useState(false);
+  const [radius, setRadius] = useState(15);
+  const [queryRadius, setQueryRadius] = useState(15);
+  const profileSettled = isAdmin || profileSWR.data !== undefined || profileSWR.error !== undefined;
 
-  // NGO Settings Modal State
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsNgoName, setSettingsNgoName] = useState("");
-  const [settingsPhone, setSettingsPhone] = useState("");
-  const [settingsAddress, setSettingsAddress] = useState("");
-  const [settingsLat, setSettingsLat] = useState("");
-  const [settingsLng, setSettingsLng] = useState("");
-  const [settingsRadius, setSettingsRadius] = useState<number>(15);
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [isDetectingLocation, setIsDetectingLocation] = useState(false);
-
-  // NGO Sponsorship Modal State
-  const [showSponsorModal, setShowSponsorModal] = useState(false);
-  const [selectedSponsorReport, setSelectedSponsorReport] = useState<Report | null>(null);
-  const [sponsorTitle, setSponsorTitle] = useState("");
-  const [sponsorDescription, setSponsorDescription] = useState("");
-  const [sponsorGoal, setSponsorGoal] = useState("");
-  const [isSponsorActive, setIsSponsorActive] = useState(false);
-  const [isSavingSponsor, setIsSavingSponsor] = useState(false);
-
-  const openSponsorshipModal = (report: Report) => {
-    setSelectedSponsorReport(report);
-    setSponsorTitle(report.fundraisingTitle || `Medical Fund for Injured Animal`);
-    setSponsorDescription(report.fundraisingDescription || `This animal requires urgent veterinary medical attention, medicines, and specialized feed. Please sponsor their recovery.`);
-    setSponsorGoal(report.fundraisingGoal ? String(report.fundraisingGoal) : "5000");
-    setIsSponsorActive(!!report.isFundraising);
-    setShowSponsorModal(true);
-  };
-
-  const saveSponsorship = async () => {
-    if (!selectedSponsorReport) return;
-    if (isSponsorActive && (!sponsorTitle.trim() || !sponsorDescription.trim() || !sponsorGoal)) {
-      return toast.warning("Please fill in the fundraising title, description, and goal.");
+  useEffect(() => {
+    if (areaReady || !profileSettled) return;
+    if (profile?.operatingRadius) {
+      setRadius(profile.operatingRadius);
+      setQueryRadius(profile.operatingRadius);
     }
-    const goalVal = parseFloat(sponsorGoal);
-    if (isSponsorActive && (isNaN(goalVal) || goalVal <= 0)) {
-      return toast.warning("Goal must be a positive number.");
+    if (base) {
+      setCenter(base);
+      setAreaReady(true);
+      return;
     }
-
-    setIsSavingSponsor(true);
-    try {
-      const res = await fetch(`/api/reports/${selectedSponsorReport._id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          isFundraising: isSponsorActive,
-          fundraisingTitle: sponsorTitle,
-          fundraisingDescription: sponsorDescription,
-          fundraisingGoal: goalVal || 0,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setReports((prev) => prev.map((r) => r._id === selectedSponsorReport._id ? data.report : r));
-        toast.success(isSponsorActive ? "Sponsorship campaign active!" : "Sponsorship campaign paused.");
-        setShowSponsorModal(false);
-      } else {
-        const errData = await res.json();
-        toast.error(errData.error || "Failed to update sponsorship.");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Something went wrong saving sponsorship settings.");
-    } finally {
-      setIsSavingSponsor(false);
+    if (!("geolocation" in navigator)) {
+      setAreaReady(true);
+      return;
     }
-  };
-
-  const openSettings = async () => {
-    setShowSettingsModal(true);
-    try {
-      const res = await fetch("/api/ngo/profile");
-      const data = await res.json();
-      if (data.ngo) {
-        setSettingsNgoName(data.ngo.ngoName || "");
-        setSettingsPhone(data.ngo.phone || "");
-        setSettingsAddress(data.ngo.address || "");
-        setSettingsLat(data.ngo.operatingLatitude != null ? String(data.ngo.operatingLatitude) : "");
-        setSettingsLng(data.ngo.operatingLongitude != null ? String(data.ngo.operatingLongitude) : "");
-        setSettingsRadius(data.ngo.operatingRadius || 15);
-      }
-    } catch (err) {
-      console.error("Failed to fetch NGO settings:", err);
-      toast.error("Failed to load settings. Please try again.");
-    }
-  };
-
-  const detectSettingsLocation = () => {
-    if (!navigator.geolocation) {
-      return toast.error("Geolocation is not supported by your browser.");
-    }
-    setIsDetectingLocation(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setSettingsLat(String(pos.coords.latitude));
-        setSettingsLng(String(pos.coords.longitude));
-        setIsDetectingLocation(false);
-        toast.success("Location coordinates detected!");
+        setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setAreaReady(true);
       },
-      (err) => {
-        console.error("Error detecting location:", err);
-        toast.error("Failed to detect location. Please input manually.");
-        setIsDetectingLocation(false);
-      },
-      { enableHighAccuracy: true }
+      () => setAreaReady(true),
+      { timeout: 8000, maximumAge: 60_000 }
     );
-  };
+  }, [areaReady, profileSettled, profile, base]);
 
-  const saveSettings = async () => {
-    if (!settingsNgoName.trim() || !settingsPhone.trim() || !settingsAddress.trim()) {
-      return toast.warning("Please fill in NGO Name, Phone, and Address.");
+  // ── Feed ─────────────────────────────────────────────────────────────────
+  const feedKey = useMemo(() => {
+    if (!areaReady) return null;
+    const p = new URLSearchParams({ radius: String(queryRadius) });
+    if (center) {
+      p.set("lat", center.lat.toFixed(6));
+      p.set("lng", center.lng.toFixed(6));
     }
-    
-    const lat = settingsLat ? parseFloat(settingsLat) : undefined;
-    const lng = settingsLng ? parseFloat(settingsLng) : undefined;
-    if ((settingsLat && isNaN(lat!)) || (settingsLng && isNaN(lng!))) {
-      return toast.warning("Latitude and Longitude must be valid numbers.");
-    }
+    return `/api/reports?${p}`;
+  }, [areaReady, center, queryRadius]);
 
-    setIsSavingSettings(true);
-    try {
-      const res = await fetch("/api/ngo/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ngoName: settingsNgoName,
-          phone: settingsPhone,
-          address: settingsAddress,
-          operatingLatitude: lat,
-          operatingLongitude: lng,
-          operatingRadius: settingsRadius,
-        }),
-      });
+  const feed = useSWR<{ reports: OpsReport[] }>(feedKey, { refreshInterval: 60_000, keepPreviousData: true });
+  const stats = useSWR<{ stats: NgoStats }>("/api/ngo/stats", { refreshInterval: 60_000 });
 
-      if (res.ok) {
-        const data = await res.json();
-        toast.success("Workspace settings updated successfully!");
-        setShowSettingsModal(false);
-        
-        if (lat != null && lng != null) {
-          setUserLocation({ lat, lng });
-          setRadius([settingsRadius]);
-          fetchNearbyReports(lat, lng, settingsRadius);
-        } else {
-          fetchAllReports();
-        }
-      } else {
-        const errData = await res.json();
-        toast.error(errData.error || "Failed to save settings.");
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("Something went wrong while saving.");
-    } finally {
-      setIsSavingSettings(false);
-    }
-  };
+  const reports = useMemo(
+    () => (feed.data?.reports ?? []).map((r) => ({ ...r, isMine: Boolean(userId && r.ngoUserId === userId) })),
+    [feed.data, userId]
+  );
 
-  const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+  const withDistance = useCallback(
+    (r: OpsReport): OpsReport => ({
+      ...r,
+      distanceKm: center ? Math.round(haversineKm(center, r.location) * 10) / 10 : r.distanceKm,
+    }),
+    [center]
+  );
 
-  useEffect(() => {
-    if (isLoaded) {
-      const role = user?.publicMetadata?.role as string | undefined;
-      if (!user || role !== "ngo") {
-        router.push("/");
-      } else {
-        // Sync accepting status from Clerk metadata
-        setIsAccepting(user.publicMetadata?.isAcceptingRescues !== false);
+  const upsert = useCallback(
+    (incoming: OpsReport, opts: { onlyIfInArea?: boolean } = {}) => {
+      void feed.mutate(
+        (prev) => {
+          const list = prev?.reports ?? [];
+          const idx = list.findIndex((r) => r.id === incoming.id);
+          if (idx >= 0) {
+            const next = [...list];
+            next[idx] = { ...withDistance(incoming), distanceKm: list[idx]!.distanceKm ?? withDistance(incoming).distanceKm };
+            return { reports: next };
+          }
+          if (opts.onlyIfInArea && center && haversineKm(center, incoming.location) > queryRadius) return prev;
+          return { reports: [withDistance(incoming), ...list] };
+        },
+        { revalidate: false }
+      );
+    },
+    [feed, withDistance, center, queryRadius]
+  );
 
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-            setUserLocation(loc);
-            fetchNearbyReports(loc.lat, loc.lng, radius[0]);
-          },
-          (err) => { fetchAllReports(); }
-        );
-      }
-    }
-  }, [isLoaded, user, router]);
+  // ── Realtime ─────────────────────────────────────────────────────────────
+  const realtime = useRealtimeStatus();
+  const [flashId, setFlashId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-  useEffect(() => {
-    const channel = pusherClient.subscribe("cowscue-alerts");
-    channel.bind("new-report", (newReport: Report) => setReports((prev) => [newReport, ...prev]));
-    channel.bind("status-update", (updatedReport: Report) => setReports((prev) => prev.map(r => r._id === updatedReport._id ? updatedReport : r)));
-    return () => { pusherClient.unsubscribe("cowscue-alerts"); };
+  const openCase = useCallback((id: string) => {
+    setSelectedId(id);
+    setSheetOpen(true);
   }, []);
 
-  const handleToggleStatus = async () => {
-    setIsToggling(true);
-    const newState = !isAccepting;
-    setIsAccepting(newState); 
-    try {
-      const res = await fetch("/api/ngo/status", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isAccepting: newState }),
-      });
-      if (!res.ok) throw new Error("Failed to update");
-    } catch (error) {
-      setIsAccepting(!newState);
-      console.error("Failed to update status");
-      toast.error("Failed to update status. Please try again.");
-    } finally {
-      setIsToggling(false);
-    }
-  };
-
-  const submitResolution = async () => {
-    if (!resolveFile || !resolvingId) {
-      return toast.warning("Photo Required: Please upload proof of the rescue.");
-    }
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", resolveFile);
-      formData.append("upload_preset", UPLOAD_PRESET!);
-      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, { method: "POST", body: formData });
-      const uploadData = await uploadRes.json();
-      const resolvedImageUrl = uploadData.secure_url;
-
-      const res = await fetch(`/api/reports/${resolvingId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "resolved", resolvedImageUrl }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setReports((prev) => prev.map((r) => r._id === resolvingId ? data.report : r));
-        toast.success("Rescue Complete! The citizen has been notified.");
-        setResolvingId(null);
-        setResolveFile(null);
-        setResolvePreview(null);
-      }
-    } catch (e) {
-      toast.error("Failed to upload photo.");
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const fetchAllReports = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/api/reports");
-      const data = await res.json();
-      setReports(data.reports || []);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const fetchNearbyReports = async (lat: number, lng: number, rad: number) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/reports/nearby?lat=${lat}&lng=${lng}&radius=${rad}`);
-      const data = await res.json();
-      setReports(data.reports || []);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const handleStatusChange = async (reportId: string, newStatus: string) => {
-    try {
-      const ngoName = user?.firstName || "Suraksha Rescue Team";
-      const res = await fetch(`/api/reports/${reportId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus,ngoName: newStatus === 'assigned' ? ngoName : undefined,
-          driverName: newStatus === 'assigned' ? driverName : undefined,
-          driverPhone: newStatus === 'assigned' ? driverPhone : undefined }),
-      });
-      if (res.status === 409) return toast.warning("Too late! Another NGO just accepted this case.");
-      if (res.ok) {
-        const data = await res.json();
-        setReports((prev) => prev.map((r) => r._id === reportId ? data.report : r));
-        setDispatchingId(null);
-        setDriverName("");
-        setDriverPhone("");
-      }
-    } catch (error) { console.error("Update failed", error); }
-  };
-
-  const calculateOptimizedRoute = async () => {
-    if (!userLocation) return toast.info("Waiting for your GPS location...");
-    setIsRouting(true);
-    try {
-      const selectedCows = reports.filter(r => selectedReports.has(r._id));
-      const coordinates = [
-        [userLocation.lng, userLocation.lat],
-        ...selectedCows.map(cow => [cow.location.coordinates[0], cow.location.coordinates[1]])
-      ].map(c => c.join(',')).join(';');
-
-      const res = await fetch(`https://router.project-osrm.org/trip/v1/driving/${coordinates}?source=first&destination=any&roundtrip=false&geometries=geojson`);
-      const data = await res.json();
-
-      if (data.code === "Ok") {
-        setOptimizedRoute(data.trips[0].geometry);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+  useChannel(Channels.ngoFeed, {
+    [Events.reportCreated]: (r: OpsReport) => {
+      const inArea = !center || haversineKm(center, r.location) <= queryRadius;
+      upsert(r, { onlyIfInArea: true });
+      if (!inArea) return;
+      if (r.severity === "CRITICAL" && !r.duplicateOf) {
+        setFlashId(r.id);
+        setTimeout(() => setFlashId((f) => (f === r.id ? null : f)), 6000);
+        toast.error("Critical rescue reported nearby", {
+          description: r.injuryType,
+          action: { label: "View", onClick: () => openCase(r.id) },
+          duration: 12_000,
+        });
       } else {
-        toast.error("Routing failed. Some locations might not be reachable by road.");
+        toast("New report in your area", { description: r.injuryType, action: { label: "View", onClick: () => openCase(r.id) } });
       }
+    },
+    [Events.reportUpdated]: (r: OpsReport) => upsert(r, { onlyIfInArea: true }),
+    [Events.driverMoved]: (d: { id: string; lat: number; lng: number; updatedAt: string }) => {
+      void feed.mutate(
+        (prev) =>
+          prev && {
+            reports: prev.reports.map((r) => (r.id === d.id ? { ...r, driver: { lat: d.lat, lng: d.lng, updatedAt: d.updatedAt } } : r)),
+          },
+        { revalidate: false }
+      );
+    },
+  });
+
+  // ── Derived lists ────────────────────────────────────────────────────────
+  const pending = useMemo(() => reports.filter((r) => r.status === "pending").sort(sortQueue), [reports]);
+  const active = useMemo(
+    () =>
+      reports
+        .filter(isActive)
+        .sort((a, b) => Number(b.isMine) - Number(a.isMine) || new Date(b.assignedAt ?? b.createdAt).getTime() - new Date(a.assignedAt ?? a.createdAt).getTime()),
+    [reports]
+  );
+  const done = useMemo(
+    () => reports.filter(isDone).sort((a, b) => new Date(b.resolvedAt ?? b.createdAt).getTime() - new Date(a.resolvedAt ?? a.createdAt).getTime()),
+    [reports]
+  );
+  const selectedReport = reports.find((r) => r.id === selectedId) ?? null;
+
+  // ── UI state ─────────────────────────────────────────────────────────────
+  const [view, setView] = useState<"ops" | "analytics">("ops");
+  const [tab, setTab] = useState<QueueTab>("queue");
+  const [mobilePanel, setMobilePanel] = useState<"list" | "map">("list");
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // ── Accepting toggle (optimistic) ────────────────────────────────────────
+  const [accepting, setAccepting] = useState(initialAccepting);
+  const [togglingAccept, setTogglingAccept] = useState(false);
+  const toggleAccepting = async (next: boolean) => {
+    setAccepting(next);
+    setTogglingAccept(true);
+    try {
+      await api("/api/ngo/status", { method: "PATCH", json: { isAccepting: next } });
+      toast.success(next ? "You're accepting new rescues." : "On break — dispatch will skip your team.");
+      void refreshMe();
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to calculate route.");
+      setAccepting(!next);
+      toast.error(errorMessage(err));
     } finally {
-      setIsRouting(false);
+      setTogglingAccept(false);
     }
   };
 
-  const toggleSelection = (id: string) => {
-    const newSet = new Set(selectedReports);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
-    setSelectedReports(newSet);
+  // ── Route planning ───────────────────────────────────────────────────────
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [route, setRoute] = useState<{ geometry: GeoJSON.Geometry; km: number; min: number; order: string[] } | null>(null);
+  const [routing, setRouting] = useState(false);
+  const toggleSelection = useCallback((id: string) => {
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setRoute(null);
+  }, []);
+  const selectedStops = reports.filter((r) => selection.has(r.id));
+  const origin = base ?? center;
+
+  const orderedStops = route ? route.order.map((id) => selectedStops.find((s) => s.id === id)).filter((s): s is OpsReport => !!s) : selectedStops;
+
+  const optimiseRoute = async () => {
+    if (!origin) return toast.warning("Set your operating centre in Settings (or allow location) to plan routes.");
+    setRouting(true);
+    try {
+      const coords = [origin, ...selectedStops.map((s) => s.location)].map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(";");
+      const res = await fetch(`https://router.project-osrm.org/trip/v1/driving/${coords}?source=first&roundtrip=false&geometries=geojson&overview=full`);
+      const data = (await res.json()) as {
+        code: string;
+        trips?: { geometry: GeoJSON.Geometry; distance: number; duration: number }[];
+        waypoints?: { waypoint_index: number }[];
+      };
+      if (data.code !== "Ok" || !data.trips?.[0]) throw new Error("Some stops aren't reachable by road.");
+      const order = selectedStops
+        .map((s, i) => ({ id: s.id, idx: data.waypoints?.[i + 1]?.waypoint_index ?? i }))
+        .sort((a, b) => a.idx - b.idx)
+        .map((s) => s.id);
+      const trip = data.trips[0];
+      setRoute({ geometry: trip.geometry, km: Math.round(trip.distance / 100) / 10, min: Math.round(trip.duration / 60), order });
+      setMobilePanel("map");
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't optimise the route."));
+    } finally {
+      setRouting(false);
+    }
   };
 
-  const generateGoogleMapsUrl = () => {
-    if (!userLocation || selectedReports.size === 0) return "";
-    const selectedCows = reports.filter(r => selectedReports.has(r._id));
-    let url = `https://www.google.com/maps/dir/${userLocation.lat},${userLocation.lng}`;
-    selectedCows.forEach(cow => { url += `/${cow.location.coordinates[1]},${cow.location.coordinates[0]}`; });
-    return url;
+  const gmapsUrl = () => {
+    const stops = orderedStops.map((s) => `${s.location.lat},${s.location.lng}`);
+    return `https://www.google.com/maps/dir/${origin ? `${origin.lat},${origin.lng}/` : ""}${stops.join("/")}`;
   };
+  const driverMessage = () =>
+    `🚑 Cowscue rescue run — ${orderedStops.length} stop${orderedStops.length === 1 ? "" : "s"}\n\n` +
+    orderedStops.map((s, i) => `${i + 1}. ${s.severity} · ${s.injuryType}`).join("\n") +
+    `\n\nTurn-by-turn route:\n${gmapsUrl()}`;
 
-  const handleSendRouteToDriver = () => {
-    const url = generateGoogleMapsUrl();
-    if (!url) return;
-    const message = `🚑 *Suraksha Rescue Dispatch*\n\nYou have been assigned ${selectedReports.size} rescue(s). Click the link below to start turn-by-turn navigation:\n\n📍 ${url}`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
-  };
+  // ── KPIs ─────────────────────────────────────────────────────────────────
+  const s = stats.data?.stats;
+  const critical = pending.filter((r) => r.severity === "CRITICAL").length;
+  const kpis = [
+    { label: "Awaiting a team", value: pending.length, sub: critical ? `${critical} critical` : "in your area", icon: Inbox, tone: critical ? "text-critical" : "" },
+    { label: "Your active rescues", value: active.filter((r) => r.isMine).length, sub: `${active.length} active in area`, icon: Activity, tone: "" },
+    { label: "Rescued · 30 days", value: s ? s.last30.reduce((n, d) => n + d.resolved, 0) : "—", sub: s ? `${s.resolved} all-time` : "", icon: CheckCircle2, tone: "" },
+    { label: "Median response", value: formatMinutes(s?.medianResponseMinutes), sub: "report → accepted", icon: Timer, tone: "" },
+  ];
 
-  const handleOpenGoogleMaps = () => {
-    const url = generateGoogleMapsUrl();
-    if (url) window.open(url, "_blank");
-  };
-
-  if (!isLoaded) return null;
-
-  const severityWeight: Record<string, number> = { "CRITICAL": 3, "MODERATE": 2, "ROUTINE": 1 };
-
-  const pendingReports = reports
-    .filter(r => r.status === 'pending')
-    .sort((a, b) => (severityWeight[b.severity] || 0) - (severityWeight[a.severity] || 0));
-
-  const assignedReports = reports.filter(r => r.status === 'assigned');
-  const resolvedReports = reports
-    .filter(r => r.status === 'resolved')
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const tabLists: Record<QueueTab, OpsReport[]> = { queue: pending, active, done };
+  const list = tabLists[tab];
+  const feedLoading = !feed.data && (feed.isLoading || !areaReady);
 
   return (
-    <div className="min-h-screen p-4 pt-24 md:p-8 md:pt-32 bg-slate-50 relative overflow-hidden">
-      
-      {/* Ambient Background Blur */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-orange-400/5 blur-[120px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-400/5 blur-[120px] rounded-full pointer-events-none"></div>
-
-      <div className="max-w-7xl mx-auto relative z-10">
-        
-        {/* HEADER GLASS ISLAND */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-10 gap-6 bg-white/60 backdrop-blur-xl p-6 sm:p-8 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-white">
+    <div className="flex min-h-[calc(100dvh-4rem)] flex-col gap-4 px-3 py-4 sm:px-6 lg:h-[calc(100dvh-4rem)] safe-bottom">
+      {/* Header */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="grid size-10 place-items-center rounded-xl bg-inverse text-inverse-foreground">
+            <Radar className="size-5" />
+          </div>
           <div>
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 flex items-center gap-3 tracking-tight">
-              <div className="bg-slate-900 p-2 rounded-xl"><Activity className="text-orange-500" size={24}/></div> 
-              Suraksha Command
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={openSettings} 
-                className="rounded-full text-slate-400 hover:text-slate-900 hover:bg-slate-100 p-2 h-9 w-9 shrink-0 ml-1 transition-all"
-                title="Workspace Settings"
-              >
-                <Settings size={20} className="hover:rotate-45 transition-transform" />
-              </Button>
+            <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+              {isAdmin ? "Platform command center" : ngoName ?? "Command center"}
+              <LiveDot state={realtime} />
             </h1>
-            <p className="text-slate-500 mt-2 font-medium flex items-center gap-2">
-              <MapPin size={16} className="text-slate-400"/>
-              {userLocation ? `Monitoring ${radius}km radius` : "Global Overview"} • {reports.length} Total Records
+            <p className="text-xs text-muted-foreground">
+              {center ? `Monitoring ${queryRadius} km around ${base ? "your base" : "your location"}` : "Monitoring all regions"} · {reports.length} cases
             </p>
           </div>
-
-          <div className="w-full lg:w-auto min-w-[320px] flex flex-col gap-5">
-            <div className="flex gap-3">
-              <Button
-                variant={showHeatmap ? "default" : "outline"}
-                onClick={() => setShowHeatmap(!showHeatmap)}
-                className={`flex-1 rounded-full font-bold transition-all ${showHeatmap ? "bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 shadow-md text-white border-0" : "bg-white text-slate-700 hover:bg-slate-50"}`}
-              >
-                <Flame className="mr-2 h-4 w-4" /> {showHeatmap ? "Hide Heatmap" : "View Heatmap"}
-              </Button>
-              <Button 
-                variant={isAccepting ? "default" : "destructive"} 
-                onClick={handleToggleStatus}
-                disabled={isToggling}
-                className={`flex-1 rounded-full font-bold transition-all border-0 shadow-md ${isAccepting ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white" : ""}`}
-              >
-                {isToggling ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Power className="mr-2 h-4 w-4" />} 
-                {isAccepting ? "Accepting" : "On Break"}
-              </Button>
-            </div>
-            
-            <div className="bg-slate-100/50 p-3 rounded-2xl border border-slate-200/50">
-              <div className="flex justify-between mb-2">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Search Radius: {radius}km</span>
-              </div>
-              <Slider defaultValue={[15]} max={50} step={1} onValueChange={(val) => setRadius(val)} onValueCommit={(val) => userLocation && fetchNearbyReports(userLocation.lat, userLocation.lng, val[0])} />
-            </div>
-          </div>
         </div>
 
-        {/* BENTO BOX STATS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <Card className="rounded-[2rem] border border-red-100 shadow-xl shadow-red-100/30 bg-gradient-to-br from-white to-red-50/50 relative overflow-hidden group hover:-translate-y-1 transition-transform">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-red-500/10 blur-2xl rounded-full"></div>
-            <CardContent className="p-6 sm:p-8">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-bold text-red-600 uppercase tracking-widest">Critical</p>
-                <div className="bg-red-100 p-2 rounded-xl text-red-600"><AlertTriangle size={20}/></div>
-              </div>
-              <h2 className="text-5xl font-black text-slate-900">{pendingReports.length}</h2>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[2rem] border border-amber-100 shadow-xl shadow-amber-100/30 bg-gradient-to-br from-white to-amber-50/50 relative overflow-hidden group hover:-translate-y-1 transition-transform">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-amber-500/10 blur-2xl rounded-full"></div>
-            <CardContent className="p-6 sm:p-8">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-bold text-amber-600 uppercase tracking-widest">In Progress</p>
-                <div className="bg-amber-100 p-2 rounded-xl text-amber-600"><RouteIcon size={20}/></div>
-              </div>
-              <h2 className="text-5xl font-black text-slate-900">{assignedReports.length}</h2>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[2rem] border border-green-100 shadow-xl shadow-green-100/30 bg-gradient-to-br from-white to-green-50/50 relative overflow-hidden group hover:-translate-y-1 transition-transform">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-green-500/10 blur-2xl rounded-full"></div>
-            <CardContent className="p-6 sm:p-8">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-sm font-bold text-green-600 uppercase tracking-widest">Rescued</p>
-                <div className="bg-green-100 p-2 rounded-xl text-green-600"><ShieldCheck size={20}/></div>
-              </div>
-              <h2 className="text-5xl font-black text-slate-900">{resolvedReports.length}</h2>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* MAP VIEW WITH ROUTING */}
-        <div className="mb-12 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-slate-300/50 border-[6px] border-white relative bg-slate-200">
-          <RescueMap reports={reports} optimizedRoute={optimizedRoute} showHeatmap={showHeatmap} />
-          {optimizedRoute && (
-            <div className="absolute top-4 left-4 z-[1000] bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-purple-100">
-              <p className="font-extrabold text-purple-700 text-sm flex items-center gap-2">
-                <RouteIcon size={18} /> Optimal Route Active
-              </p>
-              <Button size="sm" variant="ghost" onClick={() => setOptimizedRoute(undefined)} className="h-8 mt-2 text-xs w-full text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-full font-bold">Clear Route</Button>
-            </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Tabs value={view} onValueChange={(v) => setView(v as "ops" | "analytics")}>
+            <TabsList>
+              <TabsTrigger value="ops">
+                <MapIcon /> Operations
+              </TabsTrigger>
+              <TabsTrigger value="analytics">
+                <BarChart3 /> Analytics
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {!isAdmin && (
+            <label
+              className={cn(
+                "flex h-10 items-center gap-2.5 rounded-full border bg-card pl-4 pr-1.5 text-sm font-medium",
+                !accepting && "border-moderate/40 bg-moderate-soft"
+              )}
+            >
+              {accepting ? "Accepting rescues" : "On break"}
+              <Switch checked={accepting} onCheckedChange={toggleAccepting} disabled={togglingAccept} aria-label="Accepting rescues" />
+            </label>
           )}
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 xl:gap-12">
-          
-          {/* LEFT: ACTION REQUIRED */}
-          <div className="xl:col-span-2">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <h2 className="text-2xl font-extrabold text-slate-900 flex items-center gap-2">
-                <AlertTriangle className="text-red-500" /> Action Required
-              </h2>
-
-              {selectedReports.size > 0 && (
-                <div className="flex flex-wrap gap-2 animate-in slide-in-from-top-4 w-full sm:w-auto bg-white p-1.5 rounded-full shadow-md border border-slate-100">
-                  {selectedReports.size >= 2 && (
-                    <Button onClick={calculateOptimizedRoute} disabled={isRouting} variant="ghost" className="rounded-full text-purple-700 hover:bg-purple-50 font-bold flex-1 sm:flex-none">
-                      {isRouting ? <Loader2 className="animate-spin mr-2" size={16} /> : <RouteIcon className="mr-2" size={16} />}
-                      <span className="hidden sm:inline">Optimize</span>
-                    </Button>
-                  )}
-                  <Button onClick={handleOpenGoogleMaps} className="rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold flex-1 sm:flex-none">
-                    <Navigation className="mr-2" size={16} /> Nav
-                  </Button>
-                  <Button onClick={handleSendRouteToDriver} className="rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-md flex-1 sm:flex-none">
-                    <MessageCircle className="mr-2" size={16} /> Dispatch
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-5">
-              {pendingReports.concat(assignedReports).length === 0 ? (
-                <div className="p-12 text-center bg-white/50 backdrop-blur-sm rounded-[2rem] border-2 border-dashed border-slate-200 text-slate-500 font-medium">All clear! No pending rescues in this area.</div>
-              ) : (
-                pendingReports.concat(assignedReports).map((report) => (
-                  <Card key={report._id} className={`flex flex-col sm:flex-row overflow-hidden transition-all duration-300 rounded-[1.5rem] border-0 hover:-translate-y-1 ${selectedReports.has(report._id) ? 'ring-2 ring-purple-500 shadow-xl bg-purple-50/40' : 'shadow-lg shadow-slate-200/40 bg-white'}`}>
-                    <img src={report.imageUrl} alt="Injured Cow" className="w-full sm:w-48 h-48 sm:h-auto object-cover" />
-                    
-                    <div className="p-5 sm:p-6 flex flex-col justify-between flex-1">
-                      <div>
-                        <div className="flex justify-between items-start mb-3">
-                          <div className="flex gap-2 flex-wrap">
-                            <Badge className={`px-3 py-1 text-[10px] font-bold ${report.status === 'pending' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>
-                              {report.status.toUpperCase()}
-                            </Badge>
-                            {report.severity === 'CRITICAL' && <Badge className="bg-red-500 text-white border-0 px-3 py-1 text-[10px] animate-pulse">🚨 CRITICAL</Badge>}
-                            {report.severity === 'MODERATE' && <Badge className="bg-orange-500 text-white border-0 px-3 py-1 text-[10px]">⚠️ MODERATE</Badge>}
-                            {report.severity === 'ROUTINE' && <Badge className="bg-blue-500 text-white border-0 px-3 py-1 text-[10px]">ℹ️ ROUTINE</Badge>}
-                            {report.injuryType && (
-                              <Badge variant="outline" className="border-slate-200 text-slate-600 bg-slate-50 px-3 py-1 text-[10px]">
-                                🤖 AI: {report.injuryType}
-                              </Badge>
-                            )}
-                          </div>
-                          <span className="text-xs font-semibold text-slate-400 shrink-0 ml-2 bg-slate-50 px-2 py-1 rounded-md">{new Date(report.createdAt).toLocaleDateString()}</span>
-                        </div>
-                        <p className="text-slate-700 text-base font-medium line-clamp-2 mb-4 leading-relaxed">{report.description}</p>
-                      </div>
-
-                      <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-5">
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                            <div className="bg-slate-200 p-1 rounded-full"><Star size={12} className="text-slate-600"/></div>
-                            {report.reporterName || "Citizen"}
-                          </span>
-                          {report.reporterHistory > 0 ? (
-                            <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-md flex items-center gap-1">
-                              <ShieldCheck size={14} className="text-emerald-600" /> Trusted ({report.reporterHistory})
-                            </span>
-                          ) : (
-                            <span className="text-xs font-bold text-slate-500 bg-slate-200 px-2.5 py-1 rounded-md">New User</span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                          <span className="text-sm font-mono text-slate-600 bg-white px-2 py-1 rounded border border-slate-200">{report.reporterPhone || "No number"}</span>
-                          {report.reporterPhone && (
-                            <div className="flex gap-2 w-full sm:w-auto">
-                              <a href={`tel:${report.reporterPhone}`} className="flex-1 sm:flex-none">
-                                <Button size="sm" variant="outline" className="w-full h-8 px-3 text-xs font-bold border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg">📞 Call</Button>
-                              </a>
-                              <a href={`https://wa.me/${report.reporterPhone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="flex-1 sm:flex-none">
-                                <Button size="sm" variant="outline" className="w-full h-8 px-3 text-xs font-bold border-emerald-200 text-emerald-700 hover:bg-emerald-50 rounded-lg">💬 Chat</Button>
-                              </a>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {report.status === 'assigned' && (
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4 space-y-3">
-                          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping"></span> Live Tracking Active
-                          </div>
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              className="text-[11px] font-bold border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg flex-1 py-2 h-auto"
-                              onClick={() => {
-                                const url = `${window.location.origin}/track/${report._id}`;
-                                navigator.clipboard.writeText(url);
-                                toast.success("Citizen tracking link copied!");
-                              }}
-                            >
-                              🔗 Citizen Link
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
-                              className="text-[11px] font-bold border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg flex-1 py-2 h-auto"
-                              onClick={() => {
-                                const url = `${window.location.origin}/driver/${report._id}`;
-                                navigator.clipboard.writeText(url);
-                                toast.success("Driver portal link copied!");
-                              }}
-                            >
-                              🚑 Driver Portal
-                            </Button>
-                          </div>
-                          {report.driverName && (
-                            <div className="text-xs font-semibold text-slate-500 flex justify-between">
-                              <span>Driver: <strong className="text-slate-700">{report.driverName}</strong></span>
-                              {report.driverPhone && <span>Phone: <strong className="font-mono text-slate-700">{report.driverPhone}</strong></span>}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-3">
-                        <Button
-                          variant={selectedReports.has(report._id) ? "default" : "outline"}
-                          className={`rounded-xl font-bold flex-1 sm:flex-none ${selectedReports.has(report._id) ? "bg-purple-600 hover:bg-purple-700 text-white border-0 shadow-md" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
-                          onClick={() => toggleSelection(report._id)}
-                        >
-                          {selectedReports.has(report._id) ? "✓ Route Added" : "+ Add Route"}
-                        </Button>
-
-                        {report.status === 'pending' ? (
-                          <Button className="flex-1 rounded-xl font-bold bg-slate-900 hover:bg-slate-800 text-white shadow-md" onClick={() => setDispatchingId(report._id)}>Accept Case</Button>
-                        ) : (
-                          <div className="flex gap-2 flex-1 w-full sm:w-auto">
-                            <Button 
-                              variant="outline"
-                              className="rounded-xl font-bold border-rose-200 text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 h-11 px-4 flex-1 sm:flex-none"
-                              onClick={() => openSponsorshipModal(report)}
-                            >
-                              💝 {report.isFundraising ? "Fundraiser Live" : "Raise Funds"}
-                            </Button>
-                            <Button className="flex-grow rounded-xl font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-md h-11 px-4" onClick={() => setResolvingId(report._id)}>Mark Safe</Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT: RECENT HISTORY */}
-          <div>
-            <h2 className="text-2xl font-extrabold text-slate-900 mb-6 flex items-center gap-2">
-              <CheckCircle2 className="text-emerald-500" /> Recent History
-            </h2>
-            <div className="space-y-4 bg-white p-6 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100">
-              {resolvedReports.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 font-medium">No rescued cattle yet.</div>
-              ) : (
-                resolvedReports.slice(0, 5).map((report) => (
-                  <div key={report._id} className="flex items-center gap-4 bg-slate-50 p-3 rounded-2xl border border-slate-100 transition-all hover:bg-slate-100">
-                    <img src={report.imageUrl} alt="Cow" className="w-16 h-16 rounded-xl object-cover shadow-sm" />
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-slate-800 line-clamp-1">{report.description}</p>
-                      <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">{new Date(report.createdAt).toLocaleDateString()}</p>
-                    </div>
-                    <Badge variant="outline" className="text-emerald-700 border-emerald-200 bg-emerald-100 font-bold text-[10px] px-2 py-1">RESOLVED</Badge>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
+          <Button variant="outline" size="icon" onClick={() => setSettingsOpen(true)} aria-label="Workspace settings">
+            <Settings2 />
+          </Button>
         </div>
       </div>
-      {/* 🟢 NEW: DISPATCH DRIVER MODAL */}
-      {dispatchingId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 rounded-[2rem] border-0 overflow-hidden">
-            <CardHeader className="bg-slate-900 text-white p-6">
-              <CardTitle className="text-2xl font-extrabold flex items-center gap-2">
-                🚑 Dispatch Rescue
-              </CardTitle>
-              <p className="text-sm text-slate-400 mt-1 font-medium">Let the citizen know who is coming.</p>
-            </CardHeader>
-            <CardContent className="p-6 sm:p-8 space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Driver Name</label>
-                <input 
-                  type="text" 
-                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
-                  placeholder="e.g. Ramesh Kumar"
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Driver Phone (For Live Location)</label>
-                <input 
-                  type="tel" 
-                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
-                  placeholder="e.g. 9876543210"
-                  value={driverPhone}
-                  onChange={(e) => setDriverPhone(e.target.value)}
-                />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <Button variant="outline" className="flex-1 rounded-full h-12 font-bold" onClick={() => setDispatchingId(null)}>Cancel</Button>
-                <Button 
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white rounded-full h-12 font-bold" 
-                  onClick={() => handleStatusChange(dispatchingId, "assigned")}
-                  disabled={!driverName || !driverPhone}
-                >
-                  Send Ambulance
-                </Button>
-              </div>
-            </CardContent>
+
+      {/* KPIs */}
+      <div className="grid shrink-0 grid-cols-2 gap-2.5 lg:grid-cols-4">
+        {kpis.map((k) => (
+          <Card key={k.label} className="flex items-center gap-3 p-3.5">
+            <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-muted text-muted-foreground">
+              <k.icon className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-xs text-muted-foreground">{k.label}</p>
+              <p className="flex items-baseline gap-2">
+                <span className="text-xl font-semibold tabular-nums tracking-tight">{k.value}</span>
+                <span className={cn("truncate text-[11px] text-muted-foreground", k.tone)}>{k.sub}</span>
+              </p>
+            </div>
           </Card>
+        ))}
+      </div>
+
+      {view === "analytics" ? (
+        <div className="flex-1 overflow-y-auto pb-6 scrollbar-thin">
+          <Analytics stats={s} reports={reports} loading={stats.isLoading} />
         </div>
-      )}
-      {/* RESOLUTION MODAL */}
-      {resolvingId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 rounded-[2rem] border-0 overflow-hidden">
-            <CardHeader className="bg-emerald-500 text-white p-6">
-              <CardTitle className="text-2xl font-extrabold">Upload Proof</CardTitle>
-              <p className="text-sm text-emerald-50 mt-1 font-medium">Show the citizen that the animal is safe.</p>
-            </CardHeader>
-            <CardContent className="p-6 sm:p-8 space-y-6">
-              {!resolvePreview ? (
-                <div onClick={() => fileInputRef.current?.click()} className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-[1.5rem] h-48 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 hover:border-emerald-300 transition-colors group">
-                  <div className="bg-white p-3 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform"><Upload className="h-6 w-6 text-emerald-500" /></div>
-                  <span className="text-sm text-slate-600 font-bold">Tap to upload &quot;After&quot; photo</span>
-                </div>
-              ) : (
-                <div className="relative h-48 w-full rounded-[1.5rem] overflow-hidden border-4 border-slate-100 shadow-inner">
-                  <img src={resolvePreview} alt="Preview" className="w-full h-full object-cover" />
-                  <button onClick={() => { setResolveFile(null); setResolvePreview(null); }} className="absolute top-3 right-3 bg-slate-900/60 backdrop-blur-md text-white p-2 rounded-full hover:bg-slate-900 transition-colors">
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-              <input 
-                ref={fileInputRef} type="file" accept="image/*" className="hidden" 
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    // Revoke previous object URL to prevent memory leak
-                    if (resolvePreview) URL.revokeObjectURL(resolvePreview);
-                    setResolveFile(file);
-                    setResolvePreview(URL.createObjectURL(file));
-                  }
-                }} 
-              />
-              <div className="flex gap-3 pt-2">
-                <Button variant="outline" className="flex-1 rounded-full h-12 font-bold text-slate-600 hover:bg-slate-100" onClick={() => { setResolvingId(null); setResolveFile(null); setResolvePreview(null); }}>Cancel</Button>
-                <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-full h-12 font-bold shadow-lg shadow-emerald-500/20" onClick={submitResolution} disabled={isUploading}>
-                  {isUploading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <CheckCircle2 className="h-5 w-5 mr-2" />} 
-                  Complete Rescue
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-      {/* ⚙️ NEW: NGO WORKSPACE SETTINGS MODAL */}
-      {showSettingsModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <Card className="w-full max-w-lg shadow-2xl animate-in zoom-in-95 rounded-[2rem] border-0 overflow-hidden my-8">
-            <CardHeader className="bg-slate-900 text-white p-6">
-              <CardTitle className="text-2xl font-extrabold flex items-center gap-2">
-                ⚙️ Workspace Settings
-              </CardTitle>
-              <p className="text-sm text-slate-400 mt-1 font-medium">Manage your NGO profile, location center, and geofencing radius.</p>
-            </CardHeader>
-            <CardContent className="p-6 sm:p-8 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">NGO Brand Name</label>
-                <input 
-                  type="text" 
-                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
-                  placeholder="NGO Name"
-                  value={settingsNgoName}
-                  onChange={(e) => setSettingsNgoName(e.target.value)}
-                />
-              </div>
+      ) : (
+        <>
+          {/* Mobile list/map switch */}
+          <div className="lg:hidden">
+            <Tabs value={mobilePanel} onValueChange={(v) => setMobilePanel(v as "list" | "map")}>
+              <TabsList className="w-full">
+                <TabsTrigger value="list">
+                  <LayoutList /> Cases
+                </TabsTrigger>
+                <TabsTrigger value="map">
+                  <MapIcon /> Map
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Public Phone Number</label>
-                <input 
-                  type="tel" 
-                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
-                  placeholder="+91 98765 43210"
-                  value={settingsPhone}
-                  onChange={(e) => setSettingsPhone(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Office Address</label>
-                <input 
-                  type="text" 
-                  className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-orange-500 outline-none" 
-                  placeholder="e.g. 123 Rescue Way, New Delhi"
-                  value={settingsAddress}
-                  onChange={(e) => setSettingsAddress(e.target.value)}
-                />
-              </div>
-
-              <div className="border-t border-slate-100 my-4 pt-4 space-y-4">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Geofence Operating Coordinates</label>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    disabled={isDetectingLocation}
-                    className="h-8 text-xs font-bold rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50"
-                    onClick={detectSettingsLocation}
-                  >
-                    {isDetectingLocation ? <Loader2 className="animate-spin h-3.5 w-3.5 mr-1" /> : <MapPin className="h-3.5 w-3.5 mr-1" />}
-                    Detect GPS
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Latitude</label>
-                    <input 
-                      type="text" 
-                      className="w-full h-10 rounded-lg bg-slate-50 border border-slate-200 px-3 font-mono text-xs focus:ring-2 focus:ring-orange-500 outline-none" 
-                      placeholder="e.g. 28.6139"
-                      value={settingsLat}
-                      onChange={(e) => setSettingsLat(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Longitude</label>
-                    <input 
-                      type="text" 
-                      className="w-full h-10 rounded-lg bg-slate-50 border border-slate-200 px-3 font-mono text-xs focus:ring-2 focus:ring-orange-500 outline-none" 
-                      placeholder="e.g. 77.2090"
-                      value={settingsLng}
-                      onChange={(e) => setSettingsLng(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  <span>Coverage Radius</span>
-                  <span className="text-orange-600 font-mono text-sm">{settingsRadius} km</span>
-                </div>
-                <div className="pt-2">
-                  <Slider 
-                    value={[settingsRadius]} 
-                    min={1} 
-                    max={100} 
-                    step={1} 
-                    onValueChange={(val) => setSettingsRadius(val[0])} 
+          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(380px,440px)_1fr]">
+            {/* Queue */}
+            <Card className={cn("flex min-h-[60dvh] flex-col overflow-hidden lg:min-h-0", mobilePanel === "map" && "hidden lg:flex")}>
+              <div className="space-y-3 border-b p-3">
+                <Tabs value={tab} onValueChange={(v) => setTab(v as QueueTab)}>
+                  <TabsList className="w-full">
+                    <TabsTrigger value="queue">
+                      Queue <Count n={pending.length} hot={critical > 0} />
+                    </TabsTrigger>
+                    <TabsTrigger value="active">
+                      Active <Count n={active.length} />
+                    </TabsTrigger>
+                    <TabsTrigger value="done">
+                      Done <Count n={done.length} />
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <div className="flex items-center gap-3 px-1">
+                  <span className="shrink-0 text-xs text-muted-foreground">Radius</span>
+                  <Slider
+                    value={[radius]}
+                    min={1}
+                    max={100}
+                    step={1}
+                    disabled={!center}
+                    onValueChange={(v) => setRadius(v[0] ?? 15)}
+                    onValueCommit={(v) => setQueryRadius(v[0] ?? 15)}
+                    aria-label="Search radius in kilometres"
                   />
+                  <span className="w-12 shrink-0 text-right font-mono text-xs">{radius} km</span>
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-6 border-t border-slate-100">
-                <Button variant="outline" className="flex-1 rounded-full h-12 font-bold" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
-                <Button 
-                  className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-full h-12 font-bold shadow-lg shadow-orange-500/25 border-0" 
-                  onClick={saveSettings}
-                  disabled={isSavingSettings}
+              <div className="flex-1 space-y-2 overflow-y-auto p-3 pb-24 scrollbar-thin">
+                {feedLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-[104px]" />)
+                ) : feed.error ? (
+                  <EmptyState icon={X} title="Couldn't load cases" description={errorMessage(feed.error)} action={<Button variant="outline" size="sm" onClick={() => feed.mutate()}>Retry</Button>} />
+                ) : list.length === 0 ? (
+                  <EmptyState
+                    icon={tab === "queue" ? CheckCircle2 : tab === "active" ? Siren : Inbox}
+                    title={tab === "queue" ? "All clear" : tab === "active" ? "No active rescues" : "Nothing here yet"}
+                    description={
+                      tab === "queue"
+                        ? "No animals are waiting for a team in this area. New reports appear here instantly."
+                        : tab === "active"
+                          ? "Accepted cases appear here while a team is on the way."
+                          : "Rescued and closed cases from the last 30 days."
+                    }
+                  />
+                ) : (
+                  <AnimatePresence initial={false}>
+                    {list.map((r) => (
+                      <motion.div key={r.id} layout="position" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
+                        <CaseCard
+                          report={r}
+                          selected={r.id === selectedId}
+                          checked={selection.has(r.id)}
+                          flash={r.id === flashId}
+                          onOpen={openCase}
+                          onToggle={toggleSelection}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                )}
+              </div>
+            </Card>
+
+            {/* Map */}
+            <Card className={cn("relative min-h-[60dvh] overflow-hidden p-0 lg:min-h-0", mobilePanel === "list" && "hidden lg:block")}>
+              <OpsMap
+                reports={reports}
+                selectedId={selectedId ?? undefined}
+                onSelect={openCase}
+                center={center}
+                radiusKm={center ? radius : undefined}
+                base={base}
+                route={route?.geometry}
+                showHeatmap={showHeatmap}
+                className="absolute inset-0"
+              />
+              <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex items-start justify-between gap-2">
+                <Button
+                  size="sm"
+                  variant={showHeatmap ? "default" : "outline"}
+                  className="pointer-events-auto shadow-[var(--shadow-soft)]"
+                  onClick={() => setShowHeatmap((h) => !h)}
+                  aria-pressed={showHeatmap}
                 >
-                  {isSavingSettings ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : "Save Changes"}
+                  <Flame /> Heatmap
                 </Button>
+                {route && (
+                  <div className="pointer-events-auto flex items-center gap-2 rounded-full border bg-card/95 py-1 pl-3 pr-1 text-xs shadow-[var(--shadow-soft)] backdrop-blur">
+                    <RouteIcon className="size-3.5 text-[#7c3aed]" />
+                    <span className="font-medium">{route.km} km</span>
+                    <span className="text-muted-foreground">~{formatMinutes(route.min)}</span>
+                    <Button size="icon-sm" variant="ghost" className="size-6" onClick={() => setRoute(null)} aria-label="Clear route">
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+              <div className="pointer-events-none absolute bottom-3 left-3 z-[500] hidden gap-3 rounded-full border bg-card/90 px-3 py-1.5 text-[11px] text-muted-foreground shadow-[var(--shadow-soft)] backdrop-blur sm:flex">
+                <Legend color="var(--critical)" label="Critical" />
+                <Legend color="var(--moderate)" label="Moderate" />
+                <Legend color="var(--routine)" label="Routine" />
+                <span>🚑 Ambulance</span>
+              </div>
+            </Card>
+          </div>
+        </>
       )}
-      {/* 💝 NEW: NGO SPONSORSHIP SETUP MODAL */}
-      {showSponsorModal && selectedSponsorReport && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <Card className="w-full max-w-md shadow-2xl animate-in zoom-in-95 rounded-[2rem] border-0 overflow-hidden my-8">
-            <CardHeader className="bg-slate-900 text-white p-6">
-              <CardTitle className="text-2xl font-extrabold flex items-center gap-2">
-                💝 Sponsor Rescue Fund
-              </CardTitle>
-              <p className="text-sm text-slate-400 mt-1 font-medium">Activate public crowdfunding for this animal&apos;s medical expenses.</p>
-            </CardHeader>
-            <CardContent className="p-6 sm:p-8 space-y-4 max-h-[70vh] overflow-y-auto">
-              
-              <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100 mb-2">
-                <div className="space-y-0.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Fundraiser Status</label>
-                  <p className="text-xs text-slate-400 font-medium">Allow public donations to this rescue.</p>
-                </div>
-                <input 
-                  type="checkbox"
-                  className="w-10 h-6 bg-slate-200 checked:bg-rose-500 rounded-full cursor-pointer focus:ring-0 outline-none transition-colors accent-rose-500"
-                  checked={isSponsorActive}
-                  onChange={(e) => setIsSponsorActive(e.target.checked)}
-                />
-              </div>
 
-              {isSponsorActive && (
-                <div className="space-y-4 animate-in slide-in-from-top-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Fundraiser Title</label>
-                    <input 
-                      type="text" 
-                      className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-rose-500 outline-none" 
-                      placeholder="e.g. Help Ramesh walk again"
-                      value={sponsorTitle}
-                      onChange={(e) => setSponsorTitle(e.target.value)}
-                    />
-                  </div>
+      {/* Route selection bar */}
+      <AnimatePresence>
+        {selection.size > 0 && view === "ops" && (
+          <motion.div
+            initial={{ y: 80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 400, damping: 34 }}
+            className="fixed inset-x-3 bottom-4 z-[950] mx-auto flex max-w-2xl flex-wrap items-center gap-2 rounded-2xl border bg-card/95 p-2 pl-4 shadow-[var(--shadow-lift)] backdrop-blur-xl safe-bottom"
+            role="region"
+            aria-label="Route planner"
+          >
+            <span className="mr-auto text-sm font-medium">
+              {selection.size} stop{selection.size === 1 ? "" : "s"} selected
+            </span>
+            <Button size="sm" variant="outline" onClick={optimiseRoute} loading={routing} disabled={selection.size < 2}>
+              {!routing && <RouteIcon />} Optimise
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <a href={gmapsUrl()} target="_blank" rel="noopener noreferrer">
+                <Navigation /> Google Maps
+              </a>
+            </Button>
+            <Button size="sm" variant="success" asChild>
+              <a href={`https://wa.me/?text=${encodeURIComponent(driverMessage())}`} target="_blank" rel="noopener noreferrer">
+                Send to driver
+              </a>
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Clear selection"
+              onClick={() => {
+                setSelection(new Set());
+                setRoute(null);
+              }}
+            >
+              <X />
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Goal Target Amount (INR/USD)</label>
-                    <input 
-                      type="number" 
-                      className="w-full h-12 rounded-xl bg-slate-50 border border-slate-200 px-4 font-medium focus:ring-2 focus:ring-rose-500 outline-none font-mono" 
-                      placeholder="e.g. 5000"
-                      value={sponsorGoal}
-                      onChange={(e) => setSponsorGoal(e.target.value)}
-                    />
-                  </div>
+      <CaseSheet
+        report={selectedReport}
+        open={sheetOpen && !!selectedReport}
+        onOpenChange={setSheetOpen}
+        onUpdate={(r) => {
+          upsert(r);
+          void stats.mutate();
+        }}
+      />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        profile={profile}
+        onSaved={(ngo) => {
+          void profileSWR.mutate({ ngo }, { revalidate: false });
+          void refreshMe();
+          if (ngo.operatingLatitude != null && ngo.operatingLongitude != null) {
+            setCenter({ lat: ngo.operatingLatitude, lng: ngo.operatingLongitude });
+          }
+          setRadius(ngo.operatingRadius);
+          setQueryRadius(ngo.operatingRadius);
+        }}
+      />
+    </div>
+  );
+}
 
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Description & Expenses Context</label>
-                    <textarea 
-                      rows={3}
-                      className="w-full rounded-xl bg-slate-50 border border-slate-200 p-4 font-medium focus:ring-2 focus:ring-rose-500 outline-none text-sm resize-none" 
-                      placeholder="Describe what the funds will be used for (vet fees, transport, medicines)..."
-                      value={sponsorDescription}
-                      onChange={(e) => setSponsorDescription(e.target.value)}
-                    />
-                  </div>
+function Count({ n, hot }: { n: number; hot?: boolean }) {
+  return (
+    <span className={cn("rounded-full px-1.5 text-[10px] tabular-nums", hot ? "bg-critical text-white" : "bg-muted-foreground/15")}>{n}</span>
+  );
+}
 
-                  {selectedSponsorReport.fundraisingRaised != null && (
-                    <div className="text-xs font-bold text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100 flex justify-between">
-                      <span>Total Raised So Far:</span>
-                      <span className="text-rose-600 font-mono text-sm">${selectedSponsorReport.fundraisingRaised}</span>
-                    </div>
-                  )}
-                </div>
-              )}
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="size-2 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
 
-              <div className="flex gap-3 pt-6 border-t border-slate-100">
-                <Button variant="outline" className="flex-1 rounded-full h-12 font-bold" onClick={() => setShowSponsorModal(false)}>Cancel</Button>
-                <Button 
-                  className="flex-1 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-full h-12 font-bold shadow-lg shadow-rose-500/25 border-0" 
-                  onClick={saveSponsorship}
-                  disabled={isSavingSponsor}
-                >
-                  {isSavingSponsor ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : "Save Settings"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+function LiveDot({ state }: { state: string }) {
+  const live = state === "connected";
+  const label = live ? "Live" : state === "unavailable" ? "Polling" : state === "connecting" || state === "initialized" ? "Connecting" : "Offline";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        live ? "bg-success/12 text-success" : "bg-muted text-muted-foreground"
       )}
+      title={live ? "Receiving updates in real time" : "Realtime unavailable — refreshing every minute"}
+    >
+      <span className="relative flex size-1.5">
+        {live && <span className="absolute inline-flex size-full animate-ping rounded-full bg-current opacity-60" />}
+        <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+      </span>
+      {label}
+    </span>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-4 px-3 py-4 sm:px-6">
+      <Skeleton className="h-12 w-72" />
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-[68px]" />
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[440px_1fr]">
+        <Skeleton className="h-[60dvh]" />
+        <Skeleton className="hidden h-[60dvh] lg:block" />
+      </div>
     </div>
   );
 }

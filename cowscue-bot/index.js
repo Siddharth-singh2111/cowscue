@@ -6,7 +6,6 @@ const { MongoStore } = require('wwebjs-mongo'); // 🟢 Added MongoStore
 const mongoose = require('mongoose'); // 🟢 Added mongoose
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
-const Pusher = require('pusher-js');
 const express = require('express');
 
 const userState = new Map();
@@ -21,14 +20,10 @@ app.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
 });
 
-const NEXTJS_API_URL = 'https://cowscue.vercel.app/api/webhook/whatsapp'; // Ensure this matches your production URL
+// Base URL of the Cowscue web app (local, tunnel or production).
+const NEXTJS_API_URL = `${(process.env.COWSCUE_APP_URL || 'http://localhost:3000').replace(/\/$/, '')}/api/webhook/whatsapp`;
 const BOT_SECRET_KEY = process.env.BOT_SECRET_KEY; 
 
-// --- PUSHER SETUP ---
-const pusher = new Pusher(process.env.PUSHER_KEY || 'YOUR_PUSHER_KEY', {
-  cluster: process.env.PUSHER_CLUSTER || 'YOUR_PUSHER_CLUSTER',
-  encrypted: true
-});
 
 // --- MONGODB CONNECTION & BOT INITIALIZATION ---
 mongoose.connect(process.env.MONGODB_URI).then(() => {
@@ -44,35 +39,8 @@ mongoose.connect(process.env.MONGODB_URI).then(() => {
         puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
     });
 
-    // --- PUSHER LISTENER ---
-    const channel = pusher.subscribe('cowscue-alerts');
-    channel.bind('status-update', async (updatedReport) => {
-        console.log(`Received status update for report: ${updatedReport._id}`);
-        
-        if (updatedReport.reporterId && updatedReport.reporterId.startsWith('whatsapp-')) {
-            const phoneFormat = `${updatedReport.reporterPhone}@c.us`;
-
-            try {
-                if (updatedReport.status === 'assigned') {
-                    await client.sendMessage(phoneFormat,
-                        "🚑 *Rescue Update!*\n\n" +
-                        "An NGO has accepted your rescue request and a driver is currently on the way to the location you pinned."
-                    );
-                }
-                else if (updatedReport.status === 'resolved') {
-                    const newTotal = updatedReport.reporterHistory + 1;
-                    await client.sendMessage(phoneFormat,
-                        "✅ *Rescue Successful!*\n\n" +
-                        "The cow has been safely secured by the NGO.\n\n" +
-                        `⭐ *Karma Points Updated:* You are now a Level ${newTotal > 5 ? '2' : '1'} Trusted Citizen with ${newTotal} successful rescues!\n\n` +
-                        "Thank you for giving a voice to the voiceless."
-                    );
-                }
-            } catch (error) {
-                console.error("Failed to send WhatsApp status update:", error);
-            }
-        }
-    });
+    // Status updates (accepted / rescued) are now sent by the Cowscue worker via Twilio for every
+    // WhatsApp-originated report, so this bot only handles intake.
 
     // --- STANDARD BOT LOGIC ---
     client.on('qr', (qr) => {
@@ -143,7 +111,7 @@ mongoose.connect(process.env.MONGODB_URI).then(() => {
             await msg.reply("⏳ Verifying image with AI and dispatching NGOs...");
 
             try {
-                console.log(`🚀 Sending data to Vercel: ${NEXTJS_API_URL}`);
+                console.log(`🚀 Sending report to Cowscue: ${NEXTJS_API_URL}`);
                 
                 const response = await axios.post(NEXTJS_API_URL, {
                     base64Image: state.base64Image,
@@ -154,13 +122,13 @@ mongoose.connect(process.env.MONGODB_URI).then(() => {
                     headers: { 'Authorization': `Bearer ${BOT_SECRET_KEY}` }
                 });
 
-                console.log(`✅ Vercel accepted the report!`);
+                console.log(`✅ Cowscue accepted the report!`);
                 await msg.reply("✅ *Emergency Reported Successfully!*\n\nThe command center has been updated and drivers are notified.");
                 userState.delete(phone); 
                 
             } catch (error) {
-                console.error(`🚨 VERCEL REJECTED THE REQUEST:`, error.response?.data || error.message);
-                if (error.response && error.response.status === 400) {
+                console.error(`🚨 COWSCUE REJECTED THE REQUEST:`, error.response?.data || error.message);
+                if (error.response && (error.response.status === 400 || error.response.status === 422)) {
                     await msg.reply("❌ AI Verification Failed: We couldn't detect a cow. Please send a clearer photo.");
                     state.base64Image = null;
                 } else {

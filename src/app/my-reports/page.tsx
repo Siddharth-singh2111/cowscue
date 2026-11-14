@@ -1,235 +1,241 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { pusherClient } from "@/lib/pusher";
-import { Heart, Shield, Star, Sparkles, MapPin, CheckCircle2, Clock, Camera } from "lucide-react";
+import useSWR from "swr";
+import { SignInButton, useAuth } from "@clerk/nextjs";
+import { motion } from "motion/react";
+import { Award, ChevronRight, Copy, HeartHandshake, ListChecks, Plus, Radio, Sparkles } from "lucide-react";
+import type { CitizenReport } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { SeverityBadge, StatusBadge } from "@/components/report/badges";
+import { fetcher } from "@/lib/api";
+import { timeAgo } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
-interface Report {
-  _id: string;
-  imageUrl: string;
-  description: string;
-  status: string;
-  resolvedImageUrl?: string;
-  createdAt: string;
-  ngoName?: string;
-  driverName?: string;
-  driverPhone?: string;
+interface MineResponse {
+  reports: CitizenReport[];
+  stats: { totalReported: number; rescued: number; active: number; karma: number };
 }
 
-interface UserStats {
-  karmaPoints: number;
-  rescuedCows: number;
-  totalReported: number;
+type Filter = "all" | "active" | "rescued" | "closed";
+
+const TIERS = [
+  { name: "Helper", min: 0 },
+  { name: "Rescuer", min: 3 },
+  { name: "Protector", min: 10 },
+  { name: "Guardian", min: 25 },
+] as const;
+
+function tierFor(rescued: number) {
+  let idx = 0;
+  TIERS.forEach((t, i) => {
+    if (rescued >= t.min) idx = i;
+  });
+  const current = TIERS[idx]!;
+  const next = TIERS[idx + 1];
+  const pct = next ? Math.round(((rescued - current.min) / (next.min - current.min)) * 100) : 100;
+  return { current, next, pct };
 }
 
-export default function MyReports() {
-  const [reports, setReports] = useState<Report[]>([]);
-  const [stats, setStats] = useState<UserStats>({ karmaPoints: 0, rescuedCows: 0, totalReported: 0 });
-  const [loading, setLoading] = useState(true);
+export default function MyReportsPage() {
+  const { isLoaded, isSignedIn } = useAuth();
 
-  useEffect(() => {
-    const fetchMyReports = async () => {
-      try {
-        const res = await fetch("/api/reports/mine");
-        const data = await res.json();
-        setReports(data.reports || []);
-        if (data.stats) setStats(data.stats);
-      } catch (error) {
-        console.error("Failed to load reports", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMyReports();
-  }, []);
+  if (isLoaded && !isSignedIn) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-20">
+        <EmptyState
+          icon={ListChecks}
+          title="Sign in to see your reports"
+          description="Track every rescue you've started, your karma, and your badge progress."
+          action={
+            <SignInButton mode="modal">
+              <Button>Sign in</Button>
+            </SignInButton>
+          }
+        />
+      </div>
+    );
+  }
 
-  useEffect(() => {
-    const channel = pusherClient.subscribe("cowscue-alerts");
-    channel.bind("status-update", (updatedReport: Report) => {
-      setReports((prevReports) => {
-        const newReports = prevReports.map((report) =>
-          report._id === updatedReport._id
-            ? { ...report, status: updatedReport.status }
-            : report
-        );
+  return <MyReports enabled={Boolean(isLoaded && isSignedIn)} />;
+}
 
-        const newResolvedCount = newReports.filter(r => r.status === 'resolved').length;
-        setStats({
-          totalReported: newReports.length,
-          rescuedCows: newResolvedCount,
-          karmaPoints: newResolvedCount * 50
-        });
+function MyReports({ enabled }: { enabled: boolean }) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const { data, error, isLoading, mutate } = useSWR<MineResponse>(enabled ? "/api/reports/mine" : null, fetcher);
 
-        return newReports;
-      });
-    });
-
-    return () => { pusherClient.unsubscribe("cowscue-alerts"); };
-  }, []);
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "pending": return "bg-red-500/90 text-white shadow-lg shadow-red-500/30 backdrop-blur-md";
-      case "assigned": return "bg-amber-500/90 text-white shadow-lg shadow-amber-500/30 backdrop-blur-md";
-      case "resolved": return "bg-emerald-500/90 text-white shadow-lg shadow-emerald-500/30 backdrop-blur-md";
-      default: return "bg-slate-500/90 text-white backdrop-blur-md";
+  const filtered = useMemo(() => {
+    const reports = data?.reports ?? [];
+    switch (filter) {
+      case "active":
+        return reports.filter((r) => r.status === "pending" || r.status === "assigned" || r.status === "en_route");
+      case "rescued":
+        return reports.filter((r) => r.status === "resolved");
+      case "closed":
+        return reports.filter((r) => r.status === "closed");
+      default:
+        return reports;
     }
-  };
+  }, [data, filter]);
 
-  if (loading) return (
-    <div className="min-h-screen pt-32 flex flex-col items-center justify-center bg-slate-50">
-      <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin mb-4"></div>
-      <p className="text-slate-500 font-medium animate-pulse">Loading your impact...</p>
-    </div>
-  );
+  const stats = data?.stats;
+  const tier = tierFor(stats?.rescued ?? 0);
 
   return (
-    <div className="min-h-screen pt-28 md:pt-36 pb-24 px-4 sm:px-6 relative overflow-hidden bg-slate-50">
-
-      {/* Ambient Background Blur */}
-      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-orange-400/10 blur-[120px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-rose-400/10 blur-[120px] rounded-full pointer-events-none"></div>
-
-      <div className="max-w-7xl mx-auto relative z-10 space-y-12">
-
-        {/* 🏆 PREMIUM IMPACT BANNER */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-[3rem] p-8 sm:p-12 md:p-16 text-white shadow-2xl shadow-slate-900/20 relative overflow-hidden border border-slate-700/50">
-          <div className="absolute -right-20 -top-20 w-96 h-96 bg-orange-500/20 blur-[80px] rounded-full pointer-events-none"></div>
-          <Shield className="absolute -right-16 -bottom-16 text-white/5 w-96 h-96 transform rotate-12 pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-10">
-            <div className="space-y-3">
-              <div className="inline-flex items-center px-3 py-1 rounded-full bg-white/10 border border-white/10 text-orange-400 text-xs font-bold uppercase tracking-widest backdrop-blur-md mb-2">
-                <Sparkles size={14} className="mr-2" /> Citizen Hero
-              </div>
-              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight">Your Impact</h1>
-              <p className="text-slate-400 text-lg max-w-md">You are actively making the streets safer for the voiceless. Every report makes a difference.</p>
-            </div>
-
-            <div className="flex flex-wrap sm:flex-nowrap gap-4 w-full lg:w-auto">
-              <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-[2rem] p-6 text-center flex-1 lg:min-w-[160px] shadow-xl">
-                <div className="bg-orange-500/20 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Star className="text-orange-400 fill-orange-400" size={24} />
-                </div>
-                <div className="text-4xl font-black mb-1">{stats.karmaPoints}</div>
-                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">Karma</div>
-              </div>
-
-              <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-[2rem] p-6 text-center flex-1 lg:min-w-[160px] shadow-xl">
-                <div className="bg-rose-500/20 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Heart className="text-rose-400 fill-rose-400" size={24} />
-                </div>
-                <div className="text-4xl font-black mb-1">{stats.rescuedCows}</div>
-                <div className="text-xs font-bold uppercase tracking-widest text-slate-400">Rescued</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 🗺️ REPORT HISTORY HEADER */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-          <h2 className="text-3xl font-extrabold text-slate-900 flex items-center gap-3">
-            <Clock className="text-slate-400" />
-            Report History
-          </h2>
-          {reports.length > 0 && (
+    <div className="mx-auto max-w-5xl space-y-8 px-4 py-10 sm:px-6">
+      <PageHeader
+        eyebrow="Your impact"
+        title="My reports"
+        description="Every rescue you've started, live."
+        actions={
+          <Button asChild>
             <Link href="/report">
-              <Button className="rounded-full bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-700 hover:to-amber-600 text-white shadow-lg shadow-orange-500/25 border-0 font-bold px-6 transition-transform hover:-translate-y-1">
-                + Report Another Cow
-              </Button>
+              <Plus /> New report
             </Link>
-          )}
-        </div>
+          </Button>
+        }
+      />
 
-        {reports.length === 0 ? (
-          <div className="text-center py-24 bg-white/60 backdrop-blur-xl rounded-[3rem] border-2 border-dashed border-slate-200 shadow-xl shadow-slate-200/40 relative overflow-hidden">
-            <div className="bg-slate-100 p-6 rounded-full w-fit mx-auto mb-6">
-              <Camera size={48} className="text-slate-400" />
-            </div>
-            <p className="text-2xl font-bold text-slate-700 mb-2">You haven&apos;t reported any cows yet.</p>
-            <p className="text-slate-500 mb-8 max-w-sm mx-auto">Be the hero they need. If you see an injured animal, snap a photo and drop a pin.</p>
-            <Link href="/report">
-              <Button size="lg" className="bg-orange-600 hover:bg-orange-700 rounded-full h-14 px-10 text-lg font-bold shadow-xl shadow-orange-500/20 transition-transform hover:-translate-y-1">Report Your First Rescue</Button>
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {reports.map((report) => (
-              <Card key={report._id} className="rounded-[2.5rem] overflow-hidden border-0 shadow-2xl shadow-slate-200/40 hover:-translate-y-2 transition-transform duration-500 bg-white flex flex-col group">
-
-                <div className="relative h-64 w-full flex bg-slate-100 shrink-0">
-                  {report.status === 'resolved' && report.resolvedImageUrl ? (
-                    <>
-                      <div className="w-1/2 relative border-r-2 border-white">
-                        <img src={report.imageUrl} alt="Before" className="w-full h-full object-cover rounded-tl-[2.5rem] grayscale opacity-80" />
-                        <span className="absolute bottom-3 left-3 bg-slate-900/60 text-white text-[10px] uppercase tracking-widest font-black px-3 py-1 rounded-full backdrop-blur-md border border-white/10">Before</span>
-                      </div>
-                      <div className="w-1/2 relative">
-                        <img src={report.resolvedImageUrl} alt="After" className="w-full h-full object-cover rounded-tr-[2.5rem]" />
-                        <span className="absolute bottom-3 right-3 bg-emerald-500/90 text-white text-[10px] uppercase tracking-widest font-black px-3 py-1 rounded-full shadow-lg shadow-emerald-500/30 border border-white/20 backdrop-blur-md">Safe</span>
-                      </div>
-                    </>
-                  ) : (
-                    <img src={report.imageUrl} alt="Reported Cow" className="w-full h-full object-cover rounded-t-[2.5rem] group-hover:scale-105 transition-transform duration-700" />
-                  )}
-
-                  <div className={`absolute top-4 right-4 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest ${getStatusBadge(report.status)} border border-white/20 transition-colors duration-500`}>
-                    {report.status}
-                  </div>
-                </div>
-
-                <div className="flex-1 flex flex-col p-8 pt-6 relative bg-white">
-                  <div className="text-xs font-bold text-slate-400 mb-3 bg-slate-50 w-fit px-3 py-1 rounded-md">
-                    {new Date(report.createdAt).toLocaleDateString()}
-                  </div>
-
-                  <CardTitle className="text-lg font-bold text-slate-800 mb-6 leading-relaxed line-clamp-3">
-                    {report.description}  
-                  </CardTitle>
-
-                  <div className="mt-auto pt-6 border-t border-slate-100 flex items-center gap-3">
-                    {report.status === 'resolved' ? (
-                      <div className="flex items-center gap-3 bg-emerald-50 text-emerald-700 p-3 rounded-2xl w-full border border-emerald-100">
-                        <div className="bg-emerald-200 p-2 rounded-full"><CheckCircle2 size={20} className="text-emerald-700" /></div>
-                        <p className="text-sm font-bold">🎉 Rescued! (+50 Karma)</p>
-                      </div>
-                    ) : report.status === 'assigned' ? (
-                      <div className="flex flex-col gap-3 bg-amber-50 text-amber-900 p-4 rounded-2xl w-full border border-amber-200 shadow-inner">
-                        <div className="flex items-center gap-3 border-b border-amber-200/50 pb-3">
-                          <div className="bg-amber-500 p-2 rounded-full text-white animate-pulse"><MapPin size={18} /></div>
-                          <div>
-                            <p className="text-sm font-black text-amber-900 uppercase tracking-widest">{report.ngoName} Dispatched</p>
-                            <p className="text-xs font-medium text-amber-700">Driver: {report.driverName}</p>
-                          </div>
-                        </div>
-
-                        {/* The Live Location Hackathon Solution */}
-                        <Button asChild className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-md h-10 mt-2">
-                          <a
-                            href={`https://wa.me/91${report.driverPhone?.replace(/\D/g, '').slice(-10)}?text=${encodeURIComponent(`Hi ${report.driverName}, I reported the injured cow on Cowscue. Could you please share your WhatsApp Live Location so I know when you are arriving?`)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            Ask for Live Location (WhatsApp)
-                          </a>
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3 bg-slate-50 text-slate-500 p-3 rounded-2xl w-full border border-slate-100">
-                        <div className="bg-slate-200 p-2 rounded-full"><Clock size={20} className="text-slate-500" /></div>
-                        <p className="text-sm font-bold">Awaiting NGO response...</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+      {/* Stats + tier */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            { label: "Karma", value: stats?.karma, icon: Sparkles, accent: "text-primary" },
+            { label: "Rescued", value: stats?.rescued, icon: HeartHandshake, accent: "text-success" },
+            { label: "Active", value: stats?.active, icon: Radio, accent: "text-routine" },
+            { label: "Reported", value: stats?.totalReported, icon: ListChecks, accent: "text-muted-foreground" },
+          ].map((s, i) => (
+            <motion.div key={s.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+              <Card className="h-full p-4">
+                <s.icon className={cn("size-4", s.accent)} />
+                {isLoading || !stats ? (
+                  <Skeleton className="mt-3 h-8 w-14" />
+                ) : (
+                  <p className="mt-3 text-3xl font-semibold tabular-nums tracking-tight">{s.value}</p>
+                )}
+                <p className="text-xs text-muted-foreground">{s.label}</p>
               </Card>
+            </motion.div>
+          ))}
+        </div>
+
+        <Card className="p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-xl bg-primary-soft text-primary">
+              <Award className="size-5" />
+            </span>
+            <div>
+              <p className="text-xs text-muted-foreground">Current badge</p>
+              <p className="font-semibold">{tier.current.name}</p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            <Progress value={tier.pct} aria-label="Progress to next badge" />
+            <p className="text-xs text-muted-foreground">
+              {tier.next
+                ? `${tier.next.min - (stats?.rescued ?? 0)} more rescue${tier.next.min - (stats?.rescued ?? 0) === 1 ? "" : "s"} to ${tier.next.name}`
+                : "Highest badge reached — thank you!"}
+            </p>
+          </div>
+        </Card>
+      </div>
+
+      <div className="space-y-4">
+        <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="rescued">Rescued</TabsTrigger>
+            <TabsTrigger value="closed">Closed</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {isLoading || !enabled ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-28 w-full rounded-2xl" />
             ))}
           </div>
+        ) : error ? (
+          <EmptyState
+            icon={ListChecks}
+            title="Couldn't load your reports"
+            description="Please check your connection."
+            action={
+              <Button variant="outline" onClick={() => mutate()}>
+                Retry
+              </Button>
+            }
+          />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={HeartHandshake}
+            title={filter === "all" ? "No reports yet" : "Nothing here"}
+            description={filter === "all" ? "Spotted an injured cow? One photo is all it takes to get help moving." : "No reports match this filter."}
+            action={
+              filter === "all" ? (
+                <Button asChild>
+                  <Link href="/report">
+                    <Plus /> Report a rescue
+                  </Link>
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {filtered.map((r, i) => (
+              <motion.li key={r.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(i, 8) * 0.03 }}>
+                <ReportCard report={r} />
+              </motion.li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
+  );
+}
+
+function ReportCard({ report }: { report: CitizenReport }) {
+  return (
+    <Link href={`/track/${report.id}`} className="group block rounded-2xl focus-visible:outline-2 focus-visible:outline-ring">
+      <Card className="flex gap-4 p-3 transition group-hover:border-primary/40 group-hover:shadow-[var(--shadow-lift)]">
+        <div className="relative size-24 shrink-0 overflow-hidden rounded-xl bg-muted">
+          <Image src={report.imageUrl} alt="" fill sizes="96px" className="object-cover" />
+        </div>
+        <CardContent className="flex min-w-0 flex-1 flex-col justify-between p-0 sm:p-0">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              <StatusBadge status={report.status} />
+              <SeverityBadge severity={report.severity} />
+            </div>
+            <p className="truncate text-sm font-medium">{report.injuryType}</p>
+            <p className="line-clamp-1 text-xs text-muted-foreground">{report.description}</p>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 truncate">
+              {report.duplicateOf ? (
+                <>
+                  <Copy className="size-3" /> Linked to an earlier report
+                </>
+              ) : report.ngoName ? (
+                report.ngoName
+              ) : (
+                timeAgo(report.createdAt)
+              )}
+            </span>
+            <ChevronRight className="size-4 shrink-0 transition group-hover:translate-x-0.5" />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
