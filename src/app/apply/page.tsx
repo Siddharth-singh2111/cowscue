@@ -1,159 +1,183 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import Link from "next/link";
+import useSWR from "swr";
+import { SignInButton, useAuth } from "@clerk/nextjs";
+import {
+  ArrowRight,
+  BarChart3,
+  BellRing,
+  CheckCircle2,
+  Clock,
+  HandCoins,
+  LayoutDashboard,
+  Navigation,
+  ShieldAlert,
+  XCircle,
+} from "lucide-react";
+import { formatDateTime } from "@/lib/format";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Building2, FileText, User, Phone, MapPin, ShieldCheck } from "lucide-react";
-import { useUser } from "@clerk/nextjs";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { ApplicationForm, type Application } from "./_components/application-form";
 
-export default function NgoApplyPage() {
-  const { user, isLoaded } = useUser();
-  const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+const BENEFITS = [
+  { icon: BellRing, title: "Alerts only from your area", body: "WhatsApp alerts for AI-verified cases inside your own coverage circle — no spam, no wasted trips." },
+  { icon: LayoutDashboard, title: "Live command center", body: "A realtime queue sorted by severity and SLA, a map of every case and multi-stop route planning." },
+  { icon: Navigation, title: "Driver tracking, no app", body: "Send your driver a signed link; their GPS streams to you and the citizen who reported." },
+  { icon: HandCoins, title: "Recovery fundraising", body: "Open a fund for an animal's treatment and watch supporter contributions arrive live." },
+  { icon: BarChart3, title: "Response analytics", body: "Track median response and rescue times, outcomes and funds raised for your reports and donors." },
+];
 
-  const [formData, setFormData] = useState({
-    ngoName: "",
-    registrationNumber: "",
-    contactPerson: "",
-    phone: "",
-    address: "",
-  });
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData({ ...formData, [e.target.id]: e.target.value });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return toast.warning("Please sign in to apply.");
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/ngo/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(data.error);
-        setLoading(false);
-        return;
-      }
-
-      setSuccess(true);
-    } catch (error) {
-      console.error(error);
-      toast.error("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (!isLoaded) return null;
-
-  if (success) {
-    return (
-      <div className="min-h-screen pt-36 pb-24 flex items-center justify-center bg-slate-50 px-4">
-        <div className="text-center max-w-md bg-white p-10 rounded-[3rem] shadow-2xl border border-slate-100">
-          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <ShieldCheck size={40} />
-          </div>
-          <h2 className="text-3xl font-extrabold text-slate-900 mb-4">Application Received!</h2>
-          <p className="text-slate-500 mb-8 leading-relaxed">
-            Thank you for stepping up to help the voiceless. Our team will verify your NGO registration and grant you access to the Command Center shortly.
-          </p>
-          <Button onClick={() => router.push("/")} className="w-full rounded-full h-14 bg-slate-900 text-white font-bold hover:bg-slate-800">
-            Return to Homepage
-          </Button>
-        </div>
-      </div>
-    );
-  }
+function StatusCard({ app, onReapply }: { app: Application; onReapply: () => void }) {
+  const config = {
+    pending: {
+      icon: Clock,
+      tone: "border-moderate/30 bg-moderate-soft/60",
+      iconTone: "text-moderate",
+      title: "Your application is under review",
+      body: `Submitted ${formatDateTime(app.createdAt)}. Our team verifies registration details manually — this usually takes 1–2 working days. You'll get access automatically once approved.`,
+    },
+    approved: {
+      icon: CheckCircle2,
+      tone: "border-success/30 bg-success/5",
+      iconTone: "text-success",
+      title: `${app.ngoName} is a verified partner`,
+      body: "Your command center is ready. Set your coverage area there to start receiving rescue alerts.",
+    },
+    rejected: {
+      icon: XCircle,
+      tone: "border-destructive/30 bg-destructive/5",
+      iconTone: "text-destructive",
+      title: "Your application wasn't approved",
+      body: app.rejectionReason ? `Reason: ${app.rejectionReason}` : "You can update your details and apply again.",
+    },
+    suspended: {
+      icon: ShieldAlert,
+      tone: "border-destructive/30 bg-destructive/5",
+      iconTone: "text-destructive",
+      title: "Your partner access is suspended",
+      body: app.rejectionReason
+        ? `Reason: ${app.rejectionReason}. Contact the Cowscue team to restore access.`
+        : "Contact the Cowscue team to restore access.",
+    },
+  }[app.status];
 
   return (
-    <div className="min-h-screen pt-28 md:pt-36 pb-24 px-4 sm:px-6 relative overflow-hidden bg-slate-50 flex items-start justify-center">
-      
-      {/* Ambient Background Blurs */}
-      <div className="absolute top-20 left-0 w-[400px] h-[400px] bg-blue-400/10 blur-[100px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-slate-400/10 blur-[100px] rounded-full pointer-events-none"></div>
-
-      <Card className="w-full max-w-2xl shadow-2xl shadow-slate-200/50 rounded-[2.5rem] border border-white bg-white/90 backdrop-blur-xl relative z-10 overflow-hidden">
-        
-        {/* Dynamic Top Header */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-8 sm:p-10 text-center relative overflow-hidden">
-          <div className="absolute -right-10 -top-10 w-32 h-32 bg-white/10 blur-2xl rounded-full"></div>
-          
-          <div className="bg-white/10 p-3 rounded-2xl w-fit mx-auto mb-4 backdrop-blur-sm border border-white/20 shadow-inner">
-            <Building2 size={32} className="text-white" />
-          </div>
-          <h2 className="text-3xl font-extrabold text-white tracking-tight drop-shadow-md">Partner with Cowscue</h2>
-          <p className="text-slate-300 font-medium mt-2 text-sm max-w-sm mx-auto">
-            Apply for verified NGO status to access the live Command Center and route optimization.
-          </p>
+    <Card className={cn("p-6 sm:p-8", config.tone)} role="status">
+      <config.icon className={cn("mb-4 size-8", config.iconTone)} aria-hidden />
+      <h2 className="text-xl font-semibold tracking-tight">{config.title}</h2>
+      <p className="mt-2 text-muted-foreground">{config.body}</p>
+      <dl className="mt-6 grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-xs text-muted-foreground">Organisation</dt>
+          <dd className="font-medium">{app.ngoName}</dd>
         </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Registration no.</dt>
+          <dd className="font-medium">{app.registrationNumber}</dd>
+        </div>
+      </dl>
+      <div className="mt-6">
+        {app.status === "approved" && (
+          <Button asChild>
+            <Link href="/dashboard">
+              Open command center <ArrowRight />
+            </Link>
+          </Button>
+        )}
+        {app.status === "rejected" && (
+          <Button onClick={onReapply}>
+            Update details & re-apply <ArrowRight />
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
 
-        <CardContent className="p-6 sm:p-10">
-          <form onSubmit={handleSubmit} className="space-y-6">
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <Label htmlFor="ngoName" className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                  <Building2 size={14} className="text-blue-500" /> NGO Name
-                </Label>
-                <Input id="ngoName" placeholder="e.g. Save The Cows Foundation" value={formData.ngoName} onChange={handleChange} required className="h-14 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-blue-500" />
+export default function ApplyPage() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const { data, isLoading, mutate } = useSWR<{ application: Application | null }>(isSignedIn ? "/api/ngo/apply" : null);
+  const [reapplying, setReapplying] = useState(false);
+  const app = data?.application ?? null;
+  const showForm = isSignedIn && data && (!app || (app.status === "rejected" && reapplying));
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 pb-32 pt-10 sm:px-6 md:pb-20 md:pt-14">
+      <PageHeader
+        eyebrow="For NGOs & gaushalas"
+        title={
+          <>
+            Partner with Cowscue, <span className="font-display font-normal italic">reach more animals.</span>
+          </>
+        }
+        description="Join the network of verified rescue organisations receiving AI-triaged emergencies from citizens in your area. Free for registered NGOs."
+      />
+
+      <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_1.4fr] lg:gap-12">
+        <aside className="order-2 lg:order-1">
+          <div className="space-y-5 lg:sticky lg:top-24">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">What you get</h2>
+            <ul className="space-y-4">
+              {BENEFITS.map((b) => (
+                <li key={b.title} className="flex gap-4 rounded-2xl border bg-card p-4 shadow-[var(--shadow-soft)]">
+                  <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary">
+                    <b.icon className="size-4" aria-hidden />
+                  </div>
+                  <div>
+                    <p className="font-medium">{b.title}</p>
+                    <p className="text-sm text-muted-foreground">{b.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        <section className="order-1 lg:order-2" aria-label="Application">
+          {!isLoaded || (isSignedIn && isLoading) ? (
+            <Card className="space-y-4 p-6 sm:p-8">
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-11 w-full" />
+              <Skeleton className="h-11 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </Card>
+          ) : !isSignedIn ? (
+            <Card className="p-8 text-center sm:p-12">
+              <div className="mx-auto mb-5 grid size-14 place-items-center rounded-2xl bg-primary-soft text-primary">
+                <LayoutDashboard className="size-6" aria-hidden />
               </div>
-
-              <div className="space-y-3">
-                <Label htmlFor="registrationNumber" className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                  <FileText size={14} className="text-blue-500" /> Registration No.
-                </Label>
-                <Input id="registrationNumber" placeholder="Govt. Registration ID" value={formData.registrationNumber} onChange={handleChange} required className="h-14 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-blue-500" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <Label htmlFor="contactPerson" className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                  <User size={14} className="text-blue-500" /> Contact Person
-                </Label>
-                <Input id="contactPerson" placeholder="Full Name" value={formData.contactPerson} onChange={handleChange} required className="h-14 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-blue-500" />
-              </div>
-
-              <div className="space-y-3">
-                <Label htmlFor="phone" className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                  <Phone size={14} className="text-blue-500" /> Phone Number
-                </Label>
-                <Input id="phone" type="tel" placeholder="+91 9876543210" value={formData.phone} onChange={handleChange} required className="h-14 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-blue-500" />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <Label htmlFor="address" className="text-xs font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-                <MapPin size={14} className="text-blue-500" /> Shelter Address
-              </Label>
-              <Textarea id="address" placeholder="Full operational address of the Gaushala/NGO..." value={formData.address} onChange={handleChange} required className="h-24 rounded-xl bg-slate-50 border-slate-200 focus-visible:ring-blue-500 resize-none p-4" />
-            </div>
-
-            <Button
-              type="submit"
-              className="w-full h-16 text-lg font-extrabold rounded-full bg-slate-900 hover:bg-slate-800 text-white shadow-xl shadow-slate-900/20 border-0 transition-transform hover:-translate-y-1"
-              disabled={loading}
-            >
-              {loading ? <><Loader2 className="mr-3 h-6 w-6 animate-spin" /> Submitting...</> : "Submit Application"}
-            </Button>
-
-          </form>
-        </CardContent>
-      </Card>
+              <h2 className="text-xl font-semibold tracking-tight">Sign in to apply</h2>
+              <p className="mx-auto mt-2 max-w-sm text-muted-foreground">
+                Use the account your team will log in with — it becomes your organisation&apos;s command center login once approved.
+              </p>
+              <SignInButton mode="modal">
+                <Button size="lg" className="mt-6">
+                  Sign in to continue
+                </Button>
+              </SignInButton>
+            </Card>
+          ) : showForm ? (
+            <Card className="p-6 sm:p-8">
+              <h2 className="mb-6 text-xl font-semibold tracking-tight">{app ? "Update your application" : "Partner application"}</h2>
+              <ApplicationForm
+                initial={app}
+                onSubmitted={(a) => {
+                  setReapplying(false);
+                  void mutate({ application: a }, { revalidate: false });
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              />
+            </Card>
+          ) : app ? (
+            <StatusCard app={app} onReapply={() => setReapplying(true)} />
+          ) : null}
+        </section>
+      </div>
     </div>
   );
 }

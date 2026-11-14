@@ -1,166 +1,315 @@
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
-import { ArrowRight, Camera, MapPin, ShieldCheck, HeartHandshake, Clock, Activity, Users } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, ArrowUpRight, BarChart3, Camera, HandHeart, Navigation, ScanEye, ShieldCheck } from "lucide-react";
+import type { PublicStats } from "@/types";
+import { publicStats } from "@/server/services/stats";
+import { logger } from "@/server/lib/logger";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { formatMinutes } from "@/lib/format";
+import { CountUp } from "./_components/count-up";
+import { Reveal } from "./_components/reveal";
+import { FeatureBento } from "./_components/feature-bento";
+import { ArchitectureDiagram, SCALE_POINTS } from "./_components/architecture";
 
-export default function Home() {
+export const revalidate = 60;
+
+async function loadStats(): Promise<PublicStats | null> {
+  try {
+    return await publicStats();
+  } catch (err) {
+    logger.warn({ err: err instanceof Error ? err.message : err }, "landing: stats unavailable");
+    return null;
+  }
+}
+
+const STEPS = [
+  {
+    icon: Camera,
+    title: "Snap & pin",
+    body: "Take a photo of the injured animal. Your GPS location is attached automatically — on the web or over WhatsApp.",
+  },
+  {
+    icon: ScanEye,
+    title: "AI triage & dispatch",
+    body: "AI verifies it's cattle, grades severity, and alerts every partner NGO whose coverage area contains the spot.",
+  },
+  {
+    icon: Navigation,
+    title: "Track the rescue live",
+    body: "Follow the ambulance on a live map, get first-aid tips while you wait, and see proof when the animal is safe.",
+  },
+];
+
+export default async function Home() {
+  const stats = await loadStats();
+  const t = stats?.totals;
+  const active = t?.active ?? 0;
+
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 selection:bg-orange-200">
-      
-      {/* 1. CINEMATIC HERO SECTION */}
-      <section className="relative min-h-[90vh] flex items-center justify-center pt-24 pb-12 px-4 sm:px-6 overflow-hidden">
-        {/* Full Bleed Background Image with Dark Overlay */}
-        <div className="absolute inset-0 z-0">
-          
-          <div className="absolute inset-0 bg-slate-950/70 mix-blend-multiply"></div>
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-50 via-transparent to-transparent"></div>
-        </div>
+    <div className="overflow-x-clip">
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="relative">
+        <div className="pointer-events-none absolute inset-0 bg-grid mask-radial opacity-60" aria-hidden />
+        <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 pb-16 pt-10 sm:px-6 md:pt-16 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:pb-24">
+          <div className="space-y-7">
+            <HeroIn>
+              <Link
+                href="/impact"
+                className="inline-flex items-center gap-2 rounded-full border bg-card/80 py-1 pl-2 pr-3 text-sm shadow-xs backdrop-blur transition hover:bg-card"
+              >
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-70" />
+                  <span className="relative inline-flex size-2 rounded-full bg-success" />
+                </span>
+                {active > 0 ? (
+                  <span>
+                    <span className="font-semibold tabular-nums">{active}</span> rescue{active === 1 ? "" : "s"} in progress right now
+                  </span>
+                ) : (
+                  <span>Dispatch is online — 24/7</span>
+                )}
+                <ArrowRight className="size-3.5 text-muted-foreground" />
+              </Link>
+            </HeroIn>
 
-        {/* Floating Glass Island Hero Card */}
-        <div className="relative z-10 w-full max-w-5xl mx-auto mt-16 sm:mt-8">
-          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 p-8 sm:p-12 md:p-16 rounded-[2.5rem] shadow-2xl text-center space-y-8 overflow-hidden relative">
-            
-            {/* Soft internal glow */}
-            <div className="absolute -top-32 -right-32 w-96 h-96 bg-orange-500/30 blur-[100px] rounded-full pointer-events-none"></div>
+            <HeroIn delay={0.05}>
+              <h1 className="text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl lg:text-7xl">
+                Every injured cow deserves a{" "}
+                <span className="font-display text-[1.12em] font-normal italic text-gradient-brand">rescue.</span>
+              </h1>
+            </HeroIn>
 
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 border border-white/20 text-white text-sm font-medium backdrop-blur-md">
-              <span className="flex h-2.5 w-2.5 rounded-full bg-green-400 mr-3 animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]"></span>
-              Active 
+            <HeroIn delay={0.1}>
+              <p className="max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground">
+                Thousands of stray cattle are hurt on India&apos;s roads every day, and most bystanders don&apos;t know who to call. With Cowscue,
+                one photo is enough — AI triages the injury and the nearest verified gaushala is on its way in seconds.
+              </p>
+            </HeroIn>
+
+            <HeroIn delay={0.15} className="flex flex-col gap-3 sm:flex-row">
+              <Button asChild size="xl">
+                <Link href="/report">
+                  <Camera /> Report a rescue
+                </Link>
+              </Button>
+              <Button asChild size="xl" variant="outline">
+                <Link href="/impact">
+                  <BarChart3 /> See live impact
+                </Link>
+              </Button>
+            </HeroIn>
+
+            <HeroIn delay={0.2}>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <ShieldCheck className="size-4 text-success" aria-hidden />
+                Free for citizens · Verified NGO partners · Your number is only shared with the responding team
+              </p>
+            </HeroIn>
+          </div>
+
+          <HeroIn delay={0.1} className="relative">
+            <div className="relative aspect-[4/5] overflow-hidden rounded-[2rem] border shadow-[var(--shadow-lift)] sm:aspect-[5/4] lg:aspect-[4/5]">
+              <Image
+                src="/adam-sherez-MC1zyHbmfMg-unsplash.jpg"
+                alt="A cow standing in a narrow street lined with shop signs"
+                fill
+                priority
+                sizes="(min-width: 1024px) 45vw, 100vw"
+                className="object-cover object-[45%_50%]"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-transparent to-transparent" aria-hidden />
+              <p className="absolute bottom-4 left-5 text-xs text-white/70">Photo: Adam Sherez / Unsplash</p>
             </div>
-            
-            <h1 className="text-4xl sm:text-5xl md:text-7xl font-extrabold text-white tracking-tight leading-[1.1] max-w-4xl mx-auto drop-shadow-lg">
-              Save an injured cow with <br className="hidden md:block"/>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-200">one photo.</span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-slate-200 leading-relaxed max-w-2xl mx-auto font-medium">
-              Thousands of stray cattle suffer on our streets. Click a picture, drop a pin, and our AI instantly dispatches the nearest verified Gaushala.
+
+            {/* Floating product moments */}
+            <div className="absolute -left-4 top-8 hidden w-60 rounded-2xl border bg-card/95 p-4 shadow-[var(--shadow-lift)] backdrop-blur sm:block lg:-left-10" aria-hidden>
+              <div className="flex items-center justify-between">
+                <Badge variant="critical">
+                  <span className="size-1.5 rounded-full bg-current" /> Critical
+                </Badge>
+                <span className="font-mono text-[10px] text-muted-foreground">AI · 0.9s</span>
+              </div>
+              <p className="mt-2 text-sm font-medium">Hit by vehicle, unable to stand</p>
+              <p className="mt-1 text-xs text-muted-foreground">3 partner NGOs alerted within 4 km</p>
+            </div>
+            <div className="absolute -right-3 bottom-10 hidden w-56 rounded-2xl border bg-card/95 p-4 shadow-[var(--shadow-lift)] backdrop-blur sm:block lg:-right-8" aria-hidden>
+              <div className="flex items-center gap-3">
+                <span className="grid size-9 place-items-center rounded-full bg-info text-base">🚑</span>
+                <div>
+                  <p className="text-sm font-medium">Ambulance en route</p>
+                  <p className="text-xs text-muted-foreground">≈ 6 min · live GPS</p>
+                </div>
+              </div>
+            </div>
+          </HeroIn>
+        </div>
+      </section>
+
+      {/* ── Live numbers ─────────────────────────────────────────────────── */}
+      <section aria-labelledby="numbers-heading" className="border-y bg-subtle">
+        <h2 id="numbers-heading" className="sr-only">
+          Platform numbers
+        </h2>
+        <div className="mx-auto grid max-w-7xl grid-cols-2 divide-border px-4 sm:px-6 md:grid-cols-4 md:divide-x">
+          {[
+            { label: "Animals rescued", value: t?.rescued },
+            { label: "Partner NGOs", value: t?.ngos },
+            { label: "Median response", text: formatMinutes(stats?.medianResponseMinutes) },
+            { label: "Citizen reporters", value: t?.citizens },
+          ].map((s) => (
+            <div key={s.label} className="px-2 py-8 md:px-8 md:py-10">
+              <p className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
+                {s.text !== undefined ? s.text : s.value != null ? <CountUp value={s.value} /> : "—"}
+              </p>
+              <p className="mt-1.5 text-sm text-muted-foreground">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── How it works ─────────────────────────────────────────────────── */}
+      <section id="how-it-works" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-24 sm:px-6">
+        <Reveal className="max-w-2xl space-y-3">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-primary">How it works</p>
+          <h2 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+            From roadside to rescue in <span className="font-display font-normal italic">three steps.</span>
+          </h2>
+        </Reveal>
+        <ol className="mt-12 grid gap-4 md:grid-cols-3">
+          {STEPS.map((s, i) => (
+            <Reveal as="li" key={s.title} delay={i * 0.08} className="relative h-full rounded-3xl border bg-card p-7 shadow-[var(--shadow-soft)]">
+                <span className="absolute right-6 top-5 font-display text-6xl italic leading-none text-muted-foreground/25" aria-hidden>
+                  {i + 1}
+                </span>
+                <div className="mb-6 grid size-12 place-items-center rounded-2xl bg-primary-soft text-primary">
+                  <s.icon className="size-5" aria-hidden />
+                </div>
+                <h3 className="text-lg font-semibold tracking-tight">
+                  <span className="sr-only">Step {i + 1}: </span>
+                  {s.title}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
+            </Reveal>
+          ))}
+        </ol>
+      </section>
+
+      {/* ── Feature bento ────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 pb-24 sm:px-6">
+        <Reveal className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-2xl space-y-3">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-primary">Inside Cowscue</p>
+            <h2 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+              Built like an emergency service, <span className="font-display font-normal italic">not a contact form.</span>
+            </h2>
+          </div>
+          <p className="max-w-sm text-muted-foreground">Every piece exists to shave minutes off the time between a photo and a vet.</p>
+        </Reveal>
+        <FeatureBento />
+      </section>
+
+      {/* ── Built for scale ──────────────────────────────────────────────── */}
+      <section className="border-y bg-card">
+        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-24 sm:px-6 lg:grid-cols-[1fr_1.6fr]">
+          <Reveal className="space-y-6">
+            <div className="space-y-3">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-primary">Engineering</p>
+              <h2 className="text-balance text-4xl font-semibold tracking-tight">Built to stay up when it matters.</h2>
+              <p className="text-muted-foreground">
+                A rescue platform can&apos;t go down during a monsoon spike. Cowscue runs as horizontally scalable, stateless services behind a
+                load balancer, with background work isolated in its own worker tier.
+              </p>
+            </div>
+            <ul className="space-y-4">
+              {SCALE_POINTS.map((p) => (
+                <li key={p.title} className="flex gap-3">
+                  <p.icon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+                  <div>
+                    <p className="text-sm font-medium">{p.title}</p>
+                    <p className="text-sm text-muted-foreground">{p.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal delay={0.1} className="self-center">
+            <ArchitectureDiagram />
+            <p className="mt-4 text-center text-xs text-muted-foreground">
+              Live dependency status at{" "}
+              <a href="/api/ready" className="font-mono underline underline-offset-4 hover:text-foreground">
+                /api/ready
+              </a>
             </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4 relative z-20">
-              <Link href="/report" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto h-14 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-lg px-8 rounded-full shadow-lg shadow-orange-500/25 border-0 transition-transform hover:-translate-y-1">
-                  <Camera className="mr-2 h-5 w-5" /> Report Emergency
-                </Button>
-              </Link>
-              <Link href="#how-it-works" className="w-full sm:w-auto">
-                <Button variant="outline" size="lg" className="w-full sm:w-auto h-14 text-lg px-8 rounded-full bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white backdrop-blur-md transition-all">
-                  See How It Works
-                </Button>
-              </Link>
-            </div>
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      {/* 2. BENTO-BOX IMPACT STATS */}
-      <section className="relative -mt-16 z-20 max-w-7xl mx-auto px-4 sm:px-6 w-full">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-          
-          <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/40 border border-slate-100 flex flex-col items-center text-center group hover:-translate-y-1 transition-transform">
-            <div className="h-14 w-14 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 mb-6 group-hover:scale-110 transition-transform">
-              <Clock size={28} />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">24/7 AI Dispatch</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">Our Gemini-powered system never sleeps. Emergencies are routed instantly, any time of day.</p>
-          </div>
-
-          <div className="bg-slate-900 p-8 rounded-3xl shadow-xl shadow-slate-900/20 border border-slate-800 flex flex-col items-center text-center group hover:-translate-y-1 transition-transform relative overflow-hidden">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 blur-[40px] rounded-full"></div>
-            <div className="h-14 w-14 bg-slate-800 rounded-2xl flex items-center justify-center text-amber-400 mb-6 group-hover:scale-110 transition-transform">
-              <MapPin size={28} />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">Smart Radius Routing</h3>
-            <p className="text-slate-400 text-sm leading-relaxed">Alerts are pinpointed to active NGOs within a 15km radius ensuring the fastest possible response.</p>
-          </div>
-
-          <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/40 border border-slate-100 flex flex-col items-center text-center group hover:-translate-y-1 transition-transform">
-            <div className="h-14 w-14 bg-green-50 rounded-2xl flex items-center justify-center text-green-600 mb-6 group-hover:scale-110 transition-transform">
-              <Users size={28} />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Community Driven</h3>
-            <p className="text-slate-500 text-sm leading-relaxed">Join hundreds of compassionate citizens. Earn Karma points for every successful rescue.</p>
-          </div>
-
-        </div>
-      </section>
-
-      {/* 3. HOW IT WORKS (Modernized) */}
-      <section id="how-it-works" className="py-32 px-4 relative">
-        <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:24px_24px] opacity-40"></div>
-        
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="text-center max-w-2xl mx-auto mb-20">
-            <div className="inline-flex items-center px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-bold uppercase tracking-widest mb-4">
-              The Process
-            </div>
-            <h2 className="text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight">Three steps to <span className="italic text-slate-400 font-serif">save a life.</span></h2>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8 relative">
-            {/* Connecting Line (Desktop) */}
-            <div className="hidden md:block absolute top-12 left-[20%] right-[20%] h-[2px] bg-gradient-to-r from-transparent via-slate-200 to-transparent z-0"></div>
-
-            {/* Step 1 */}
-            <div className="relative z-10 flex flex-col items-center text-center">
-              <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center text-slate-700 shadow-[0_0_40px_-10px_rgba(0,0,0,0.1)] border-4 border-slate-50 mb-8 relative">
-                <div className="absolute -top-2 -right-2 w-8 h-8 bg-slate-900 text-white rounded-full flex items-center justify-center font-bold text-sm shadow-md">1</div>
-                <Camera size={32} className="text-orange-500" />
+      {/* ── For NGOs ─────────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 py-24 sm:px-6">
+        <Reveal>
+          <div className="relative overflow-hidden rounded-[2rem] bg-inverse p-8 text-inverse-foreground sm:p-12 lg:p-16">
+            <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-primary/30 blur-3xl" aria-hidden />
+            <div className="pointer-events-none absolute inset-0 bg-dots opacity-20 mask-radial" aria-hidden />
+            <div className="relative grid gap-10 lg:grid-cols-[1.4fr_1fr] lg:items-end">
+              <div className="space-y-4">
+                <p className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] opacity-70">
+                  <HandHeart className="size-4" aria-hidden /> For gaushalas & NGOs
+                </p>
+                <h2 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+                  Spend fuel on rescues, <span className="font-display font-normal italic">not on false alarms.</span>
+                </h2>
+                <p className="max-w-xl opacity-75">
+                  Get verified, AI-triaged cases only from inside your coverage area, a live command center with route planning, driver tracking,
+                  fundraising tools and response-time analytics. Free for registered organisations.
+                </p>
               </div>
-              <h4 className="text-2xl font-bold text-slate-900 mb-3">Snap a Photo</h4>
-              <p className="text-slate-500 leading-relaxed px-4 text-base">
-                Take a clear picture of the injured animal. Our AI instantly verifies the image to prevent spam and assess severity.
-              </p>
-            </div>
-
-            {/* Step 2 */}
-            <div className="relative z-10 flex flex-col items-center text-center">
-              <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center text-slate-700 shadow-[0_0_40px_-10px_rgba(0,0,0,0.1)] border-4 border-slate-50 mb-8 relative">
-                <div className="absolute -top-2 -right-2 w-8 h-8 bg-slate-900 text-white rounded-full flex items-center justify-center font-bold text-sm shadow-md">2</div>
-                <MapPin size={32} className="text-orange-500" />
-              </div>
-              <h4 className="text-2xl font-bold text-slate-900 mb-3">Drop the Pin</h4>
-              <p className="text-slate-500 leading-relaxed px-4 text-base">
-                Allow location access to attach exact GPS coordinates. Add a brief description of the injury or situation.
-              </p>
-            </div>
-
-            {/* Step 3 */}
-            <div className="relative z-10 flex flex-col items-center text-center">
-              <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center text-slate-700 shadow-[0_0_40px_-10px_rgba(0,0,0,0.1)] border-4 border-slate-50 mb-8 relative">
-                <div className="absolute -top-2 -right-2 w-8 h-8 bg-slate-900 text-white rounded-full flex items-center justify-center font-bold text-sm shadow-md">3</div>
-                <ShieldCheck size={32} className="text-orange-500" />
-              </div>
-              <h4 className="text-2xl font-bold text-slate-900 mb-3">Rescue Dispatched</h4>
-              <p className="text-slate-500 leading-relaxed px-4 text-base">
-                Nearby NGOs receive a high-priority WhatsApp alert with an optimized route directly to the animal&apos;s location.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 4. PREMIUM CTA SECTION */}
-      <section className="py-24 px-4 sm:px-6 mb-12">
-        <div className="max-w-5xl mx-auto bg-gradient-to-br from-orange-500 to-amber-600 rounded-[3rem] p-10 sm:p-16 text-center relative overflow-hidden shadow-2xl shadow-orange-500/20">
-          <div className="absolute top-0 right-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 pointer-events-none"></div>
-          
-          <div className="relative z-10 space-y-8">
-            <h2 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight">Ready to make a difference?</h2>
-            <p className="text-xl text-orange-50 max-w-2xl mx-auto font-medium">
-              Join the compassionate citizens who are using Cowscue to bring timely medical aid to street cattle.
-            </p>
-            <div className="pt-4">
-              <Link href="/report" className="inline-block">
-                <Button size="lg" className="h-14 bg-white hover:bg-slate-50 text-orange-600 text-lg px-10 rounded-full shadow-xl transition-transform hover:-translate-y-1 font-bold">
-                  Report an Emergency Now <ArrowRight className="ml-2 h-5 w-5" />
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col lg:items-end">
+                <Button asChild size="xl" className="w-full sm:w-auto">
+                  <Link href="/apply">
+                    Become a partner <ArrowRight />
+                  </Link>
                 </Button>
-              </Link>
+                <Button asChild size="xl" variant="ghost" className="w-full text-inverse-foreground hover:bg-white/10 sm:w-auto">
+                  <Link href="/impact#partners">
+                    Meet current partners <ArrowUpRight />
+                  </Link>
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
+        </Reveal>
       </section>
 
+      {/* ── Final CTA ────────────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-3xl px-4 pb-28 text-center sm:px-6">
+        <Reveal className="space-y-6">
+          <h2 className="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+            Seen an animal in pain? <span className="font-display font-normal italic text-gradient-brand">Don&apos;t walk past.</span>
+          </h2>
+          <p className="text-lg text-muted-foreground">It takes under a minute to report — and you can watch help arrive.</p>
+          <Button asChild size="xl">
+            <Link href="/report">
+              <Camera /> Report a rescue now
+            </Link>
+          </Button>
+        </Reveal>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * Above-the-fold entrance animation in pure CSS: content is visible in the server HTML and animates
+ * from first paint, without waiting for hydration (keeps LCP fast and works without JS).
+ */
+function HeroIn({ children, delay = 0, className }: { children: React.ReactNode; delay?: number; className?: string }) {
+  return (
+    <div
+      className={`animate-in fade-in slide-in-from-bottom-3 fill-mode-both duration-700 ease-out motion-reduce:animate-none ${className ?? ""}`}
+      style={{ animationDelay: `${delay}s` }}
+    >
+      {children}
     </div>
   );
 }

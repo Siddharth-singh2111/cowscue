@@ -1,0 +1,11 @@
+.git
+.next
+node_modules
+cowscue-bot
+coverage
+k8s
+*.md
+.env*
+!.env.example
+npm-debug.log*
+.DS_Store
