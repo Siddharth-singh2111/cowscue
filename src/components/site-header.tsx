@@ -8,6 +8,7 @@ import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useMe } from "@/hooks/useMe";
+import { useWorkspaces } from "@/components/workspace";
 import { cn } from "@/lib/utils";
 
 type NavItem = { href: string; label: string; icon: typeof Home };
@@ -35,6 +36,9 @@ const HIDDEN_ON = ["/driver"];
 export function SiteHeader() {
   const pathname = usePathname();
   const { links, showReport } = useNav();
+  const { workspaces } = useWorkspaces();
+  // The header's primary button jumps to the user's workspace — or the other one, if they're already there.
+  const workspace = workspaces.find((w) => !pathname.startsWith(w.href));
   if (HIDDEN_ON.some((p) => pathname.startsWith(p))) return null;
 
   return (
@@ -72,6 +76,15 @@ export function SiteHeader() {
                 </Link>
               </Button>
             )}
+            {workspace && (
+              <Button asChild size="sm" className="h-9 px-3 sm:px-4">
+                <Link href={workspace.href}>
+                  <workspace.icon />
+                  <span className="sm:hidden">{workspace.short}</span>
+                  <span className="hidden sm:inline">{workspace.label}</span>
+                </Link>
+              </Button>
+            )}
             <SignedOut>
               <SignInButton mode="modal">
                 <Button variant="outline" size="sm" className="h-9 px-4">
@@ -81,7 +94,15 @@ export function SiteHeader() {
             </SignedOut>
             <SignedIn>
               <div className="ml-1 flex items-center">
-                <UserButton appearance={{ elements: { avatarBox: "size-8" } }} />
+                <UserButton appearance={{ elements: { avatarBox: "size-8" } }}>
+                  {workspaces.length > 0 && (
+                    <UserButton.MenuItems>
+                      {workspaces.map((w) => (
+                        <UserButton.Link key={w.href} label={w.label} href={w.href} labelIcon={<w.icon className="size-4" />} />
+                      ))}
+                    </UserButton.MenuItems>
+                  )}
+                </UserButton>
               </div>
             </SignedIn>
           </div>
