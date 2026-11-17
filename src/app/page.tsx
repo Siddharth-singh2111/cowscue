@@ -6,6 +6,7 @@ import { publicStats } from "@/server/services/stats";
 import { logger } from "@/server/lib/logger";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { WorkspaceBanner } from "@/components/workspace";
 import { formatMinutes } from "@/lib/format";
 import { CountUp } from "./_components/count-up";
 import { Reveal } from "./_components/reveal";
@@ -53,6 +54,7 @@ export default async function Home() {
         <div className="pointer-events-none absolute inset-0 bg-grid mask-radial opacity-60" aria-hidden />
         <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 pb-16 pt-10 sm:px-6 md:pt-16 lg:grid-cols-[1.05fr_1fr] lg:gap-16 lg:pb-24">
           <div className="space-y-7">
+            <WorkspaceBanner />
             <HeroIn>
               <Link
                 href="/impact"
